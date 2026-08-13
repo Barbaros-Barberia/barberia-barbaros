@@ -132,7 +132,7 @@
     color:var(--brass); font-weight:700; margin:14px 0 6px;
   }
   label:first-of-type{margin-top:0;}
-  input[type=date], input[type=text], input[type=tel], input[type=password]{
+  input[type=date], input[type=text], input[type=tel], input[type=password], select{
     width:100%; padding:13px 14px; border-radius:10px;
     border:1px solid var(--line); background:var(--panel-2); color:var(--cream);
     font-size:16px; font-family:'Inter'; outline:none;
@@ -424,6 +424,19 @@
       </div>
 
       <div class="card">
+        <h2>Bloqueo de horas</h2>
+        <div class="small-note">Para eventualidades: bloquea una sola hora puntual sin cerrar todo el día.</div>
+        <label for="bloqueoHoraFecha">Fecha</label>
+        <input type="date" id="bloqueoHoraFecha">
+        <label for="bloqueoHoraSelect">Hora a bloquear</label>
+        <select id="bloqueoHoraSelect"><option value="">Elige una fecha primero</option></select>
+        <label for="bloqueoHoraMotivo">Motivo (opcional)</label>
+        <input type="text" id="bloqueoHoraMotivo" placeholder="Ej: Cita médica">
+        <button class="primary" id="btnBloquearHora">Bloquear hora</button>
+        <div id="listaHorasBloqueadas" style="margin-top:16px;"></div>
+      </div>
+
+      <div class="card">
         <h2>Buscar histórico</h2>
         <div class="small-note">Filtra una fecha para ver a quiénes atendiste ese día y a qué hora, o si el día estuvo bloqueado.</div>
         <label for="historialFecha">Fecha a consultar</label>
@@ -664,6 +677,7 @@ document.getElementById("btnAuthOpen").addEventListener("click", () => openAuthM
    ========================================================= */
 let CITAS = [];
 let BLOQUEOS = [];
+let HORAS_BLOQUEADAS = [];
 let dataLoaded = false;
 
 /* =========================================================
@@ -692,6 +706,7 @@ function refreshDataFromServer(onDone, onFail){
     .then(function(data){
       CITAS = data.citas || [];
       BLOQUEOS = data.bloqueos || [];
+      HORAS_BLOQUEADAS = data.horasBloqueadas || [];
       dataLoaded = true;
       setSyncStatus("ok");
       if(onDone) onDone();
@@ -881,6 +896,7 @@ function renderClientDay(){
 function renderSlots(dateStr){
   const allSlots = generateSlots(dateStr);
   const taken = CITAS.filter(a => a.date === dateStr).map(a => a.minutes);
+  const horasBloqueadas = HORAS_BLOQUEADAS.filter(h => h.date === dateStr).map(h => h.minutes);
 
   const isToday = dateStr === todayStr();
   const now = new Date();
@@ -890,10 +906,12 @@ function renderSlots(dateStr){
   allSlots.forEach(min => {
     const btn = document.createElement("div");
     const isTaken = taken.includes(min);
+    const isHoraBloqueada = horasBloqueadas.includes(min);
     const isPast = isToday && min <= nowMinutes;
-    btn.className = "slot" + (isTaken ? " taken" : (isPast ? " past" : ""));
-    btn.textContent = isTaken ? "Ocupado" : minutesToLabel(min);
-    if(!isTaken && !isPast){
+    const noDisponible = isTaken || isHoraBloqueada;
+    btn.className = "slot" + (noDisponible ? " taken" : (isPast ? " past" : ""));
+    btn.textContent = noDisponible ? (isTaken ? "Ocupado" : "No disponible") : minutesToLabel(min);
+    if(!noDisponible && !isPast){
       btn.addEventListener("click", () => {
         document.querySelectorAll(".slot").forEach(s => s.classList.remove("selected"));
         btn.classList.add("selected");
@@ -1039,6 +1057,7 @@ function refreshBarberPanel(){
   renderStats();
   renderListaCitas();
   renderBloqueos();
+  renderHorasBloqueadas();
 }
 
 function renderStats(){
@@ -1140,9 +1159,11 @@ fechaConsulta.addEventListener("change", () => {
 
   const all = generateSlots(dateStr);
   const taken = CITAS.filter(a => a.date === dateStr).length;
+  const horasBloqueadas = HORAS_BLOQUEADAS.filter(h => h.date === dateStr).length;
+  const ocupados = taken + horasBloqueadas;
   document.getElementById("availTotal").textContent = all.length;
-  document.getElementById("availOcup").textContent = taken;
-  document.getElementById("availLibre").textContent = all.length - taken;
+  document.getElementById("availOcup").textContent = ocupados;
+  document.getElementById("availLibre").textContent = all.length - ocupados;
   availSummary.style.display = "flex";
 });
 
@@ -1208,6 +1229,100 @@ function renderBloqueos(){
     unBtn.addEventListener("click", () => {
       unBtn.disabled = true;
       apiPost("desbloquearDia", { date: b.date })
+        .then(() => refreshDataFromServer(refreshBarberPanel))
+        .catch(() => { alert("No se pudo desbloquear. Intenta de nuevo."); unBtn.disabled = false; });
+    });
+    item.appendChild(unBtn);
+    wrap.appendChild(item);
+  });
+}
+
+/* --- Bloqueo de horas puntuales --- */
+const bloqueoHoraFecha = document.getElementById("bloqueoHoraFecha");
+const bloqueoHoraSelect = document.getElementById("bloqueoHoraSelect");
+
+bloqueoHoraFecha.addEventListener("change", () => {
+  const dateStr = bloqueoHoraFecha.value;
+  if(!dateStr){
+    bloqueoHoraSelect.innerHTML = '<option value="">Elige una fecha primero</option>';
+    return;
+  }
+  const slots = generateSlots(dateStr);
+  if(slots.length === 0){
+    bloqueoHoraSelect.innerHTML = '<option value="">Sin horario ese día</option>';
+    return;
+  }
+  bloqueoHoraSelect.innerHTML = slots.map(m => `<option value="${m}">${minutesToLabel(m)}</option>`).join("");
+});
+
+document.getElementById("btnBloquearHora").addEventListener("click", () => {
+  const dateStr = bloqueoHoraFecha.value;
+  const minutes = bloqueoHoraSelect.value;
+
+  if(!dateStr || minutes === ""){
+    alert("Selecciona una fecha y una hora.");
+    return;
+  }
+
+  if(HORAS_BLOQUEADAS.some(h => h.date === dateStr && Number(h.minutes) === Number(minutes))){
+    alert("Esa hora ya está bloqueada.");
+    return;
+  }
+
+  const yaOcupada = CITAS.some(a => a.date === dateStr && Number(a.minutes) === Number(minutes));
+  if(yaOcupada){
+    const ok = confirm("Ya hay una cita registrada en ese horario. La cita sigue existiendo igual; solo se bloqueará para que nadie más reserve ahí si llega a cancelarse. ¿Bloquear de todas formas?");
+    if(!ok) return;
+  }
+
+  const time = minutesToLabel(Number(minutes));
+  const motivo = document.getElementById("bloqueoHoraMotivo").value.trim();
+  const btn = document.getElementById("btnBloquearHora");
+  btn.disabled = true;
+  btn.textContent = "Bloqueando…";
+
+  apiPost("bloquearHora", { date: dateStr, minutes: Number(minutes), time: time, reason: motivo })
+    .then((res) => {
+      btn.disabled = false;
+      btn.textContent = "Bloquear hora";
+      if(!res.ok){ alert(res.message || "No se pudo bloquear esa hora."); return; }
+      bloqueoHoraFecha.value = "";
+      bloqueoHoraSelect.innerHTML = '<option value="">Elige una fecha primero</option>';
+      document.getElementById("bloqueoHoraMotivo").value = "";
+      refreshDataFromServer(refreshBarberPanel);
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = "Bloquear hora";
+      alert("No se pudo conectar. Intenta de nuevo.");
+    });
+});
+
+function renderHorasBloqueadas(){
+  const list = [...HORAS_BLOQUEADAS].sort((a,b) => (a.date + String(a.minutes).padStart(4,"0")).localeCompare(b.date + String(b.minutes).padStart(4,"0")));
+  const wrap = document.getElementById("listaHorasBloqueadas");
+  wrap.innerHTML = "";
+
+  if(list.length === 0){
+    wrap.innerHTML = '<div class="empty">No hay horas bloqueadas.</div>';
+    return;
+  }
+
+  list.forEach(h => {
+    const item = document.createElement("div");
+    item.className = "blocked-item";
+    item.innerHTML = `
+      <div>
+        <div class="d">${prettyDate(h.date)} · ${h.time}</div>
+        ${h.reason ? `<div class="m">${escapeHtml(h.reason)}</div>` : ""}
+      </div>
+    `;
+    const unBtn = document.createElement("button");
+    unBtn.className = "danger";
+    unBtn.textContent = "Desbloquear";
+    unBtn.addEventListener("click", () => {
+      unBtn.disabled = true;
+      apiPost("desbloquearHora", { date: h.date, minutes: h.minutes })
         .then(() => refreshDataFromServer(refreshBarberPanel))
         .catch(() => { alert("No se pudo desbloquear. Intenta de nuevo."); unBtn.disabled = false; });
     });
