@@ -30,7 +30,7 @@
     color:var(--cream);
     font-family:'Inter',system-ui,-apple-system,sans-serif;
     min-height:100vh;
-    padding-bottom:84px;
+    padding-bottom:30px;
   }
   h1,h2,h3,.display{font-family:'Bebas Neue',system-ui,sans-serif; letter-spacing:0.04em;}
 
@@ -45,6 +45,19 @@
     text-align:center;
     border-bottom:1px solid var(--line);
     background:linear-gradient(180deg, rgba(201,151,77,0.06), transparent);
+    position:relative;
+  }
+  .barber-access{
+    position:absolute; top:14px; right:14px;
+    width:30px; height:30px; border-radius:50%;
+    background:rgba(0,0,0,0.25); border:1px solid var(--line);
+    color:var(--cream-dim); font-size:13px; opacity:0.55; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .barber-access:active{opacity:0.9;}
+  .back-to-client{
+    display:inline-block; font-size:12px; color:var(--cream-dim);
+    margin-bottom:14px; cursor:pointer; text-decoration:underline;
   }
   header.top .eyebrow{
     font-size:11px; letter-spacing:0.32em; text-transform:uppercase;
@@ -182,21 +195,6 @@
   .confirm .row span:first-child{color:var(--cream-dim);}
   .confirm .row span:last-child{font-weight:700; text-align:right;}
 
-  nav.tabs{
-    position:fixed; bottom:0; left:0; right:0; z-index:20;
-    background:var(--panel); border-top:1px solid var(--line);
-    display:flex; padding:8px 10px calc(8px + env(safe-area-inset-bottom));
-    gap:8px;
-  }
-  nav.tabs button{
-    flex:1; background:none; border:none; color:var(--cream-dim);
-    display:flex; flex-direction:column; align-items:center; gap:3px;
-    font-family:'Inter'; font-size:11px; font-weight:600; letter-spacing:0.02em;
-    padding:8px 4px; border-radius:10px; cursor:pointer;
-  }
-  nav.tabs button .ic{font-size:18px;}
-  nav.tabs button.active{color:var(--brass-bright); background:rgba(201,151,77,0.10);}
-
   .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px;}
   .stat{
     background:var(--panel); border:1px solid var(--line); border-radius:12px;
@@ -276,6 +274,7 @@
 <body>
 
 <header class="top">
+  <button id="navBarbero" class="barber-access" title="Panel del barbero">✂️</button>
   <div class="eyebrow">Barbería</div>
   <h1>BÁRBAROS</h1>
   <div class="sub">Reserva tu turno · Corte con estilo</div>
@@ -370,6 +369,8 @@
   <!-- ================= BARBERO ================= -->
   <section id="tab-barbero">
 
+    <div class="back-to-client" id="volverAReservas">← Volver a reservas</div>
+
     <div class="card" id="pinCard">
       <h2>Acceso del barbero</h2>
       <div class="pin-gate">
@@ -435,11 +436,6 @@
   </section>
 
 </main>
-
-<nav class="tabs">
-  <button id="navCliente" class="active"><span class="ic">📅</span>Reservar</button>
-  <button id="navBarbero"><span class="ic">✂️</span>Panel Barbero</button>
-</nav>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -789,20 +785,21 @@ function escapeHtml(str){
 /* =========================================================
    NAVEGACIÓN DE PESTAÑAS
    ========================================================= */
-const navCliente = document.getElementById("navCliente");
 const navBarbero = document.getElementById("navBarbero");
+const volverAReservas = document.getElementById("volverAReservas");
 const tabCliente = document.getElementById("tab-cliente");
 const tabBarbero = document.getElementById("tab-barbero");
 
-navCliente.addEventListener("click", () => {
-  navCliente.classList.add("active"); navBarbero.classList.remove("active");
+function irAVistaCliente(){
   tabCliente.classList.add("active"); tabBarbero.classList.remove("active");
-});
-navBarbero.addEventListener("click", () => {
-  navBarbero.classList.add("active"); navCliente.classList.remove("active");
+}
+function irAVistaBarbero(){
   tabBarbero.classList.add("active"); tabCliente.classList.remove("active");
   if(barberUnlocked) refreshDataFromServer(refreshBarberPanel);
-});
+}
+
+navBarbero.addEventListener("click", irAVistaBarbero);
+volverAReservas.addEventListener("click", irAVistaCliente);
 
 /* =========================================================
    VISTA CLIENTE
@@ -977,6 +974,9 @@ function checkPin(){
     pinCard.style.display = "none";
     panelBarbero.style.display = "block";
     pinError.textContent = "";
+    if("Notification" in window && Notification.permission === "default"){
+      Notification.requestPermission();
+    }
     refreshDataFromServer(refreshBarberPanel);
     if(pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(() => {
@@ -990,6 +990,7 @@ function checkPin(){
 
 document.getElementById("btnSalirPanel").addEventListener("click", () => {
   barberUnlocked = false;
+  lastKnownCitasCount = null;
   if(pollTimer) clearInterval(pollTimer);
   pinInput.value = "";
   pinCard.style.display = "block";
@@ -1000,8 +1001,41 @@ document.getElementById("btnRefrescar").addEventListener("click", () => {
   refreshDataFromServer(refreshBarberPanel);
 });
 
+// Avisa con sonido + notificación del navegador cuando aparece una cita nueva
+// mientras tienes el panel abierto (el correo llega igual, esto es un plus).
+let lastKnownCitasCount = null;
+
+function checkForNewCitas(){
+  if(lastKnownCitasCount !== null && CITAS.length > lastKnownCitasCount){
+    notifyNewCita();
+  }
+  lastKnownCitasCount = CITAS.length;
+}
+
+function notifyNewCita(){
+  playBeep();
+  if("Notification" in window && Notification.permission === "granted"){
+    new Notification("💈 Nueva cita reservada", { body: "Revisa el panel de Barbería Bárbaros." });
+  }
+}
+
+function playBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 880;
+    o.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.15, ctx.currentTime);
+    o.start();
+    o.stop(ctx.currentTime + 0.25);
+  }catch(e){ /* si el navegador bloquea el sonido, no pasa nada grave */ }
+}
+
 function refreshBarberPanel(){
   if(!barberUnlocked) return;
+  checkForNewCitas();
   renderStats();
   renderListaCitas();
   renderBloqueos();
