@@ -362,6 +362,8 @@
         <div class="row"><span>Día</span><span id="cFecha"></span></div>
         <div class="row"><span>Hora</span><span id="cHora"></span></div>
       </div>
+      <div class="day-note" style="margin-top:14px;">Dale clic al botón para enviarle al barbero la confirmación de tu cita por WhatsApp.</div>
+      <a class="primary" id="btnConfirmarWhatsapp" target="_blank" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">📲 Confirmar por WhatsApp</a>
       <button class="secondary" id="btnNueva">Reservar otra cita</button>
     </div>
   </section>
@@ -466,6 +468,10 @@ import {
 // PEGA AQUÍ el link de tu Apps Script que termina en /exec
 // (Extensiones > Apps Script > Implementar > Gestionar implementaciones > Copiar)
 const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwQB0-jvghC3a_TFJKds6bALkJ8gKiN2EC2D0eoPFZvlPrWuAUajr_4xKbfL7RYMJ_qmA/exec";
+
+// Tu número de WhatsApp con indicativo de país, sin espacios ni el signo +.
+// Ejemplo Colombia: "573017140172"
+const BARBER_WHATSAPP = "573017140172";
 
 const BARBER_PIN = "2580"; // Cambia este PIN por el que prefieras
 const STEP = 40; // minutos entre citas
@@ -936,7 +942,8 @@ btnReservar.addEventListener("click", () => {
     minutes: selectedSlot,
     time: minutesToLabel(selectedSlot),
     name: nombreInput.value.trim(),
-    phone: celularInput.value.trim()
+    phone: celularInput.value.trim(),
+    email: currentUser ? currentUser.email : ""
   };
 
   btnReservar.disabled = true;
@@ -956,6 +963,9 @@ btnReservar.addEventListener("click", () => {
       document.getElementById("cCelular").textContent = appt.phone;
       document.getElementById("cFecha").textContent = prettyDate(appt.date);
       document.getElementById("cHora").textContent = appt.time;
+
+      const mensajeWhatsapp = `Hola! Soy ${appt.name}. Confirmo mi cita en Barbería Bárbaros:\n\n📅 Día: ${prettyDate(appt.date)}\n🕐 Hora: ${appt.time}\n\n¡Nos vemos!`;
+      document.getElementById("btnConfirmarWhatsapp").href = `https://wa.me/${BARBER_WHATSAPP}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
       formWrap.style.display = "none";
       slotsWrap.style.display = "none";
