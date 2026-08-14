@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
 <title>Barbería Bárbaros · Reservas</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#151210">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BÁRBAROS">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -78,6 +85,17 @@
     background:transparent; color:var(--cream-dim); border:1px solid var(--line);
   }
   .auth-hello{font-size:12px; color:var(--brass-bright); font-weight:600;}
+  .install-btn{
+    display:block; margin:12px auto 0; padding:9px 16px; border-radius:20px;
+    background:var(--brass); color:#20160a; border:none; font-family:'Inter';
+    font-weight:700; font-size:12px; cursor:pointer;
+  }
+  .ios-hint{
+    margin:12px auto 0; padding:9px 14px; border-radius:12px; max-width:280px;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--cream-dim);
+    font-size:11px; text-align:center; line-height:1.5;
+  }
+  .ios-hint b{color:var(--brass-bright);}
 
   .modal-overlay{
     position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:50;
@@ -289,6 +307,8 @@
   <div class="auth-bar" id="authBar">
     <button id="btnAuthOpen" class="auth-pill">Iniciar sesión</button>
   </div>
+  <button id="btnInstalarApp" class="install-btn" style="display:none;">📲 Descargar app · Guárdala en tu celular</button>
+  <div id="iosInstallHint" class="ios-hint" style="display:none;">📲 Para instalarla: toca <b>Compartir</b> y elige <b>Añadir a pantalla de inicio</b></div>
 </header>
 <div class="pole"></div>
 
@@ -1410,6 +1430,44 @@ historialFecha.addEventListener("change", () => {
     wrap.appendChild(item);
   });
 });
+
+/* =========================================================
+   INSTALAR COMO APP (PWA)
+   ========================================================= */
+const btnInstalarApp = document.getElementById("btnInstalarApp");
+const iosInstallHint = document.getElementById("iosInstallHint");
+let deferredInstallPrompt = null;
+
+function yaEstaInstalada(){
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+// Android / Chrome: el navegador nos avisa cuando la app se puede instalar
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if(!yaEstaInstalada()) btnInstalarApp.style.display = "block";
+});
+
+btnInstalarApp.addEventListener("click", async () => {
+  if(!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  btnInstalarApp.style.display = "none";
+});
+
+window.addEventListener("appinstalled", () => {
+  btnInstalarApp.style.display = "none";
+});
+
+// iPhone / Safari: no existe un botón automático, así que mostramos instrucciones
+function esIOS(){
+  return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+}
+if(esIOS() && !yaEstaInstalada()){
+  iosInstallHint.style.display = "block";
+}
 
 /* =========================================================
    ARRANQUE
