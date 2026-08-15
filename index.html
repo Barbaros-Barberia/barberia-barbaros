@@ -1140,13 +1140,17 @@ function renderListaCitas(){
   const wrap = document.getElementById("listaCitas");
   wrap.innerHTML = "";
 
-  if(CITAS.length === 0){
-    wrap.innerHTML = '<div class="empty">Todavía no hay citas registradas.</div>';
+  // El resumen solo muestra lo que aún necesita atención (pendiente/retrasada).
+  // Lo ya realizado se archiva y se consulta desde "Buscar histórico".
+  const citasActivas = CITAS.filter(a => getStatus(a) !== "realizada");
+
+  if(citasActivas.length === 0){
+    wrap.innerHTML = '<div class="empty">No hay citas pendientes por atender. Lo ya realizado lo puedes ver en "Buscar histórico".</div>';
     return;
   }
 
   const byDate = {};
-  CITAS.forEach(a => { (byDate[a.date] = byDate[a.date] || []).push(a); });
+  citasActivas.forEach(a => { (byDate[a.date] = byDate[a.date] || []).push(a); });
   const dates = Object.keys(byDate).sort();
 
   dates.forEach(dateStr => {
