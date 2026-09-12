@@ -420,13 +420,16 @@
         </svg>
         <span>Enviar mensaje a WhatsApp</span>
       </a>
-      <div class="day-note" style="margin-top:10px;">Opcional: activa un recordatorio adicional que te avisa por Telegram.</div>
-      <a class="telegram-btn" id="btnActivarTelegram" target="_blank">
-        <svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true">
-          <path fill="#fff" d="M16 3C8.82 3 3 8.82 3 16s5.82 13 13 13 13-5.82 13-13S23.18 3 16 3zm6.15 9.05-2.1 9.9c-.16.7-.58.87-1.17.54l-3.23-2.38-1.56 1.5c-.17.17-.32.32-.65.32l.23-3.28 5.98-5.4c.26-.23-.06-.36-.4-.13l-7.39 4.65-3.18-.99c-.69-.22-.7-.69.15-1.02l12.43-4.79c.58-.21 1.08.14.89 1.08z"/>
-        </svg>
-        <span>Activar recordatorio en Telegram</span>
-      </a>
+      <div id="telegramWrap">
+        <div class="day-note" style="margin-top:10px;">Opcional: activa un recordatorio adicional que te avisa por Telegram.</div>
+        <a class="telegram-btn" id="btnActivarTelegram" target="_blank">
+          <svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true">
+            <path fill="#fff" d="M16 3C8.82 3 3 8.82 3 16s5.82 13 13 13 13-5.82 13-13S23.18 3 16 3zm6.15 9.05-2.1 9.9c-.16.7-.58.87-1.17.54l-3.23-2.38-1.56 1.5c-.17.17-.32.32-.65.32l.23-3.28 5.98-5.4c.26-.23-.06-.36-.4-.13l-7.39 4.65-3.18-.99c-.69-.22-.7-.69.15-1.02l12.43-4.79c.58-.21 1.08.14.89 1.08z"/>
+          </svg>
+          <span>Activar recordatorio en Telegram</span>
+        </a>
+      </div>
+      <div id="telegramYaActivo" class="day-note" style="display:none; margin-top:10px; text-align:center;">✅ Recordatorio por Telegram ya activado</div>
       <button class="secondary" id="btnNueva">Reservar otra cita</button>
     </div>
   </section>
@@ -759,9 +762,19 @@ let dataLoaded = false;
 /* =========================================================
    CONEXIÓN AL BACKEND (Google Apps Script) VÍA FETCH
    ========================================================= */
-function apiGet(action){
-  return fetch(WEBAPP_URL + "?action=" + encodeURIComponent(action))
-    .then(function(r){ return r.json(); });
+function apiGet(action, params){
+  let url = WEBAPP_URL + "?action=" + encodeURIComponent(action);
+  if(params){
+    Object.keys(params).forEach(k => { url += "&" + encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); });
+  }
+  return fetch(url).then(function(r){ return r.json(); });
+}
+
+// Codifica texto (el correo del cliente) en base64 "seguro para URL",
+// porque el parámetro /start de Telegram no admite @ ni puntos.
+function toBase64Url(str){
+  const b64 = btoa(unescape(encodeURIComponent(str)));
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function apiPost(action, payload){
@@ -1071,7 +1084,24 @@ btnReservar.addEventListener("click", () => {
 
       const mensajeWhatsapp = `Hola! Soy ${appt.name}. Confirmo mi cita en Barbería Bárbaros:\n\n📅 Día: ${prettyDate(appt.date)}\n🕐 Hora: ${appt.time}\n\n¡Nos vemos!`;
       document.getElementById("btnConfirmarWhatsapp").href = `https://wa.me/${BARBER_WHATSAPP}?text=${encodeURIComponent(mensajeWhatsapp)}`;
-      document.getElementById("btnActivarTelegram").href = `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${appt.id}`;
+
+      // Telegram queda vinculado a la CUENTA del cliente (su correo), no a
+      // esta cita puntual. Si ya lo activó antes, no le mostramos el botón
+      // de nuevo — ya le va a llegar el recordatorio automático.
+      if(currentUser && currentUser.email){
+        document.getElementById("btnActivarTelegram").href = `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${toBase64Url(currentUser.email)}`;
+        apiGet("telegramStatus", { email: currentUser.email })
+          .then((res) => {
+            if(res && res.linked){
+              document.getElementById("telegramWrap").style.display = "none";
+              document.getElementById("telegramYaActivo").style.display = "block";
+            }else{
+              document.getElementById("telegramWrap").style.display = "block";
+              document.getElementById("telegramYaActivo").style.display = "none";
+            }
+          })
+          .catch(() => { /* si falla la consulta, dejamos el botón visible por defecto */ });
+      }
 
       formWrap.style.display = "none";
       slotsWrap.style.display = "none";
