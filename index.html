@@ -375,6 +375,7 @@
 
       <label for="fecha">Elige el día</label>
       <input type="date" id="fecha" autocomplete="off" disabled>
+      <div id="cargandoFecha" class="day-note" style="display:none;">⏳ Consultando horarios disponibles…</div>
       <div id="diaInfo" class="day-note" style="display:none;"></div>
       <div id="cerradoMsg" class="closed-msg" style="display:none;"></div>
 
@@ -513,10 +514,10 @@ import {
    ========================================================= */
 // PEGA AQUÍ el link de tu Apps Script que termina en /exec
 // (Extensiones > Apps Script > Implementar > Gestionar implementaciones > Copiar)
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwQB0-jvghC3a_TFJKds6bALkJ8gKiN2EC2D0eoPFZvlPrWuAUajr_4xKbfL7RYMJ_qmA/exec";
+const WEBAPP_URL = "PEGA_AQUI_TU_URL_DE_APPS_SCRIPT";
 
 // Tu número de WhatsApp con indicativo de país, sin espacios ni el signo +.
-// Ejemplo Colombia: "573017140172"
+// Ejemplo Colombia: "573001234567"
 const BARBER_WHATSAPP = "573017140172";
 
 const BARBER_PIN = "2580"; // Cambia este PIN por el que prefieras
@@ -906,6 +907,7 @@ function resetClientView(){
   slotsWrap.style.display = "none";
   diaInfo.style.display = "none";
   cerradoMsg.style.display = "none";
+  document.getElementById("cargandoFecha").style.display = "none";
   if(currentUser && currentProfile) applyProfileToForm();
 }
 window.addEventListener("pageshow", resetClientView);
@@ -914,11 +916,15 @@ window.addEventListener("pageshow", resetClientView);
 // (para no mostrar un horario "libre" que alguien ya tomó hace un minuto).
 fechaInput.addEventListener("change", () => {
   fechaInput.disabled = true;
+  document.getElementById("cargandoFecha").style.display = "block";
+  diaInfo.style.display = "none";
   refreshDataFromServer(() => {
     fechaInput.disabled = false;
+    document.getElementById("cargandoFecha").style.display = "none";
     renderClientDay();
   }, () => {
     fechaInput.disabled = false;
+    document.getElementById("cargandoFecha").style.display = "none";
     alert("No se pudo conectar. Revisa tu conexión a internet e intenta de nuevo.");
   });
 });
@@ -1006,6 +1012,25 @@ btnReservar.addEventListener("click", () => {
     phone: celularInput.value.trim(),
     email: currentUser ? currentUser.email : ""
   };
+
+  // Si este cliente ya tiene una cita activa (pendiente o retrasada) sin cumplir
+  // todavía, se lo advertimos antes de dejarlo reservar otra — así evitamos que
+  // por un doble clic, o porque la página cargó lento y volvió a intentar,
+  // termine con dos citas sin darse cuenta.
+  if(currentUser){
+    const ahora = new Date();
+    const citaActiva = CITAS.find(a =>
+      a.email === currentUser.email &&
+      getStatus(a) !== "realizada" &&
+      apptDateTime(a) >= ahora
+    );
+    if(citaActiva){
+      const seguro = confirm(
+        `Ya tienes una cita reservada para ${prettyDate(citaActiva.date)} a las ${citaActiva.time}.\n\n¿Quieres reservar otra de todas formas?`
+      );
+      if(!seguro) return;
+    }
+  }
 
   btnReservar.disabled = true;
   btnReservar.textContent = "Guardando…";
