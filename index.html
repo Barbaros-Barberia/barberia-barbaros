@@ -777,7 +777,21 @@ function apiGet(action, params){
   if(params){
     Object.keys(params).forEach(k => { url += "&" + encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); });
   }
-  return fetchConTimeout(url).then(function(r){ return r.json(); });
+  return fetchConTimeout(url, {}, 15000).then(function(r){ return r.json(); });
+}
+
+// Si una consulta falla (por ejemplo, un bache breve de señal), la
+// reintenta un par de veces antes de rendirse. Así, la mayoría de las
+// caídas de conexión de un instante pasan desapercibidas para el cliente.
+function conReintentos(fn, intentosRestantes){
+  intentosRestantes = intentosRestantes === undefined ? 2 : intentosRestantes;
+  return fn().catch(function(err){
+    if(intentosRestantes > 0){
+      return new Promise((resolve) => setTimeout(resolve, 1200))
+        .then(() => conReintentos(fn, intentosRestantes - 1));
+    }
+    throw err;
+  });
 }
 
 // Codifica texto (el correo del cliente) en base64 "seguro para URL",
@@ -801,7 +815,7 @@ function refreshDataFromServer(onDone, onFail){
     return;
   }
   setSyncStatus("loading");
-  apiGet("getData")
+  conReintentos(() => apiGet("getData"))
     .then(function(data){
       CITAS = data.citas || [];
       BLOQUEOS = data.bloqueos || [];
@@ -1077,7 +1091,7 @@ btnReservar.addEventListener("click", () => {
   btnReservar.disabled = true;
   btnReservar.textContent = "Guardando…";
 
-  apiPost("crearCita", cita)
+  conReintentos(() => apiPost("crearCita", cita))
     .then((res) => {
       btnReservar.textContent = "Confirmar cita";
       if(!res.ok){
