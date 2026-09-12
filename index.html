@@ -762,12 +762,22 @@ let dataLoaded = false;
 /* =========================================================
    CONEXIÓN AL BACKEND (Google Apps Script) VÍA FETCH
    ========================================================= */
+// Pone un límite de tiempo a cualquier llamada al servidor: si se demora
+// demasiado (red lenta, Apps Script ocupado, etc.), la cancela y avisa
+// con un error claro, en vez de dejar al cliente esperando para siempre.
+function fetchConTimeout(url, options, timeoutMs){
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs || 20000);
+  return fetch(url, Object.assign({}, options || {}, { signal: controller.signal }))
+    .finally(() => clearTimeout(timer));
+}
+
 function apiGet(action, params){
   let url = WEBAPP_URL + "?action=" + encodeURIComponent(action);
   if(params){
     Object.keys(params).forEach(k => { url += "&" + encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); });
   }
-  return fetch(url).then(function(r){ return r.json(); });
+  return fetchConTimeout(url).then(function(r){ return r.json(); });
 }
 
 // Codifica texto (el correo del cliente) en base64 "seguro para URL",
@@ -778,7 +788,7 @@ function toBase64Url(str){
 }
 
 function apiPost(action, payload){
-  return fetch(WEBAPP_URL, {
+  return fetchConTimeout(WEBAPP_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" }, // evita el preflight de CORS
     body: JSON.stringify({ action: action, payload: payload })
@@ -1112,7 +1122,11 @@ btnReservar.addEventListener("click", () => {
     .catch((err) => {
       btnReservar.textContent = "Confirmar cita";
       updateButtonState();
-      alert("No se pudo conectar para guardar la cita. Revisa tu internet e intenta de nuevo.");
+      alert(
+        "La reserva está tardando más de lo normal y no pudimos confirmarla en pantalla.\n\n" +
+        "Antes de intentar de nuevo: vuelve a elegir esta misma fecha y revisa si esa hora ya aparece como 'Ocupado' en la lista — si es así, tu cita SÍ quedó guardada y no necesitas repetirla."
+      );
+      refreshDataFromServer(() => renderSlots(dateStr));
     });
 });
 
