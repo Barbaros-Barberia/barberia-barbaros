@@ -217,6 +217,15 @@
   .whatsapp-btn:active{opacity:0.9;}
   .whatsapp-btn svg{flex-shrink:0;}
 
+  .telegram-btn{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    width:100%; padding:13px; margin-top:8px; border-radius:10px;
+    background:#229ED9; color:#fff; font-weight:700; font-size:14px;
+    text-decoration:none; box-sizing:border-box; border:none; cursor:pointer;
+  }
+  .telegram-btn:active{opacity:0.9;}
+  .telegram-btn svg{flex-shrink:0;}
+
   .confirm{
     text-align:center; padding:10px 4px 4px;
   }
@@ -411,6 +420,13 @@
         </svg>
         <span>Enviar mensaje a WhatsApp</span>
       </a>
+      <div class="day-note" style="margin-top:10px;">Opcional: activa un recordatorio adicional que te avisa por Telegram.</div>
+      <a class="telegram-btn" id="btnActivarTelegram" target="_blank">
+        <svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true">
+          <path fill="#fff" d="M16 3C8.82 3 3 8.82 3 16s5.82 13 13 13 13-5.82 13-13S23.18 3 16 3zm6.15 9.05-2.1 9.9c-.16.7-.58.87-1.17.54l-3.23-2.38-1.56 1.5c-.17.17-.32.32-.65.32l.23-3.28 5.98-5.4c.26-.23-.06-.36-.4-.13l-7.39 4.65-3.18-.99c-.69-.22-.7-.69.15-1.02l12.43-4.79c.58-.21 1.08.14.89 1.08z"/>
+        </svg>
+        <span>Activar recordatorio en Telegram</span>
+      </a>
       <button class="secondary" id="btnNueva">Reservar otra cita</button>
     </div>
   </section>
@@ -519,6 +535,9 @@ const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwQB0-jvghC3a_TFJKds
 // Tu número de WhatsApp con indicativo de país, sin espacios ni el signo +.
 // Ejemplo Colombia: "573001234567"
 const BARBER_WHATSAPP = "573017140172";
+
+// El usuario (@username) de tu bot de Telegram, sin la @. Lo obtienes al crearlo con @BotFather.
+const TELEGRAM_BOT_USERNAME = "BarberiaBarbarosBot";
 
 const BARBER_PIN = "2580"; // Cambia este PIN por el que prefieras
 const STEP = 40; // minutos entre citas
@@ -1052,6 +1071,7 @@ btnReservar.addEventListener("click", () => {
 
       const mensajeWhatsapp = `Hola! Soy ${appt.name}. Confirmo mi cita en Barbería Bárbaros:\n\n📅 Día: ${prettyDate(appt.date)}\n🕐 Hora: ${appt.time}\n\n¡Nos vemos!`;
       document.getElementById("btnConfirmarWhatsapp").href = `https://wa.me/${BARBER_WHATSAPP}?text=${encodeURIComponent(mensajeWhatsapp)}`;
+      document.getElementById("btnActivarTelegram").href = `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${appt.id}`;
 
       formWrap.style.display = "none";
       slotsWrap.style.display = "none";
