@@ -78,15 +78,13 @@
     display:inline-block; font-size:12px; color:var(--cream-dim);
     margin-bottom:14px; cursor:pointer; text-decoration:underline;
   }
-  header.top .eyebrow{
-    font-size:11px; letter-spacing:0.32em; text-transform:uppercase;
-    color:var(--brass); font-weight:600;
+  .logo-img{
+    display:block; margin:0 auto; max-width:220px; width:60%; height:auto;
   }
-  header.top h1{
-    font-size:44px; line-height:0.95; margin:6px 0 2px; color:var(--cream);
-    text-shadow:0 2px 0 rgba(0,0,0,0.4);
+  header.top .sub{
+    color:var(--cream-dim); font-size:12px; letter-spacing:0.03em;
+    max-width:300px; margin:8px auto 0; line-height:1.5; font-weight:600;
   }
-  header.top .sub{color:var(--cream-dim); font-size:13px; letter-spacing:0.02em;}
 
   .auth-bar{margin-top:14px; display:flex; justify-content:center; align-items:center; gap:10px;}
   .auth-pill{
@@ -208,15 +206,6 @@
     padding:8px 12px; border-radius:8px; border:1px solid rgba(163,70,56,0.5);
     background:rgba(163,70,56,0.12); color:#e7b7ac; font-weight:700; font-size:12px; cursor:pointer;
   }
-  .whatsapp-btn{
-    display:flex; align-items:center; justify-content:center; gap:10px;
-    width:100%; padding:14px; margin-top:16px; border-radius:10px;
-    background:#25D366; color:#fff; font-weight:800; font-size:15px;
-    text-decoration:none; box-sizing:border-box; border:none; cursor:pointer;
-  }
-  .whatsapp-btn:active{opacity:0.9;}
-  .whatsapp-btn svg{flex-shrink:0;}
-
   .telegram-btn{
     display:flex; align-items:center; justify-content:center; gap:10px;
     width:100%; padding:13px; margin-top:8px; border-radius:10px;
@@ -322,9 +311,8 @@
 
 <header class="top">
   <button id="navBarbero" class="barber-access" title="Panel del barbero">✂️</button>
-  <div class="eyebrow">Barbería</div>
-  <h1>BÁRBAROS</h1>
-  <div class="sub">Reserva tu turno · Corte con estilo</div>
+  <img src="logo-barbaros.png" alt="Barbería Bárbaros" class="logo-img">
+  <div class="sub">NO HACEMOS SIMPLEMENTE CORTES, CREAMOS ESTILOS QUE LLEVAN TU PERSONALIDAD.</div>
   <div class="auth-bar" id="authBar">
     <button id="btnAuthOpen" class="auth-pill">Iniciar sesión</button>
   </div>
@@ -412,16 +400,8 @@
         <div class="row"><span>Día</span><span id="cFecha"></span></div>
         <div class="row"><span>Hora</span><span id="cHora"></span></div>
       </div>
-      <div class="day-note" style="margin-top:14px;">Dale clic al botón para enviarle al barbero la confirmación de tu cita por WhatsApp.</div>
-      <a class="whatsapp-btn" id="btnConfirmarWhatsapp" target="_blank">
-        <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
-          <path fill="#fff" d="M16 3C9.096 3 3.5 8.596 3.5 15.5c0 2.38.664 4.61 1.816 6.51L3 29l7.16-2.276A12.44 12.44 0 0 0 16 28c6.904 0 12.5-5.596 12.5-12.5S22.904 3 16 3zm0 22.727a10.19 10.19 0 0 1-5.19-1.42l-.372-.222-4.25 1.352 1.375-4.144-.242-.386A10.19 10.19 0 0 1 5.773 15.5C5.773 9.845 10.345 5.273 16 5.273S26.227 9.845 26.227 15.5 21.655 25.727 16 25.727z"/>
-          <path fill="#fff" d="M21.62 18.11c-.306-.153-1.81-.893-2.09-.995-.28-.102-.484-.153-.688.154-.204.306-.79.994-.968 1.199-.178.204-.357.23-.663.077-.306-.153-1.293-.477-2.464-1.52-.911-.812-1.526-1.815-1.705-2.121-.178-.306-.019-.472.134-.624.138-.138.306-.357.459-.536.153-.178.204-.306.306-.51.102-.204.051-.383-.026-.536-.077-.153-.688-1.658-.943-2.27-.248-.596-.5-.515-.688-.525-.178-.008-.382-.01-.586-.01-.204 0-.535.077-.816.383-.28.306-1.07 1.046-1.07 2.55 0 1.505 1.096 2.96 1.249 3.164.153.204 2.158 3.295 5.229 4.622.73.315 1.3.503 1.744.644.733.233 1.4.2 1.928.121.588-.088 1.81-.74 2.065-1.454.255-.714.255-1.327.178-1.454-.076-.128-.28-.204-.586-.357z"/>
-        </svg>
-        <span>Enviar mensaje a WhatsApp</span>
-      </a>
       <div id="telegramWrap">
-        <div class="day-note" style="margin-top:10px;">Opcional: activa un recordatorio adicional que te avisa por Telegram.</div>
+        <div class="day-note" style="margin-top:14px;">Activa tu recordatorio automático: te avisamos por Telegram antes de tu cita.</div>
         <a class="telegram-btn" id="btnActivarTelegram" target="_blank">
           <svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true">
             <path fill="#fff" d="M16 3C8.82 3 3 8.82 3 16s5.82 13 13 13 13-5.82 13-13S23.18 3 16 3zm6.15 9.05-2.1 9.9c-.16.7-.58.87-1.17.54l-3.23-2.38-1.56 1.5c-.17.17-.32.32-.65.32l.23-3.28 5.98-5.4c.26-.23-.06-.36-.4-.13l-7.39 4.65-3.18-.99c-.69-.22-.7-.69.15-1.02l12.43-4.79c.58-.21 1.08.14.89 1.08z"/>
@@ -534,10 +514,6 @@ import {
 // PEGA AQUÍ el link de tu Apps Script que termina en /exec
 // (Extensiones > Apps Script > Implementar > Gestionar implementaciones > Copiar)
 const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwQB0-jvghC3a_TFJKds6bALkJ8gKiN2EC2D0eoPFZvlPrWuAUajr_4xKbfL7RYMJ_qmA/exec";
-
-// Tu número de WhatsApp con indicativo de país, sin espacios ni el signo +.
-// Ejemplo Colombia: "573001234567"
-const BARBER_WHATSAPP = "573017140172";
 
 // El usuario (@username) de tu bot de Telegram, sin la @. Lo obtienes al crearlo con @BotFather.
 const TELEGRAM_BOT_USERNAME = "BarberiaBarbarosBot";
@@ -1105,9 +1081,6 @@ btnReservar.addEventListener("click", () => {
       document.getElementById("cCelular").textContent = appt.phone;
       document.getElementById("cFecha").textContent = prettyDate(appt.date);
       document.getElementById("cHora").textContent = appt.time;
-
-      const mensajeWhatsapp = `Hola! Soy ${appt.name}. Confirmo mi cita en Barbería Bárbaros:\n\n📅 Día: ${prettyDate(appt.date)}\n🕐 Hora: ${appt.time}\n\n¡Nos vemos!`;
-      document.getElementById("btnConfirmarWhatsapp").href = `https://wa.me/${BARBER_WHATSAPP}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
       // Telegram queda vinculado a la CUENTA del cliente (su correo), no a
       // esta cita puntual. Si ya lo activó antes, no le mostramos el botón
