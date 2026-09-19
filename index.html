@@ -492,6 +492,13 @@
         <div id="historialResultado" style="margin-top:14px;"></div>
       </div>
 
+      <div class="card">
+        <h2>Migrar desde Sheets</h2>
+        <div class="small-note">Usa esto UNA SOLA VEZ para traer a Firestore las citas y bloqueos que ya tenías guardados en Google Sheets, antes de compartir el link con nuevos clientes. No borra ni daña nada de tu Sheet.</div>
+        <button class="primary" id="btnMigrar">Migrar historial ahora</button>
+        <div id="migrarResultado" class="day-note" style="display:none; margin-top:12px;"></div>
+      </div>
+
       <button class="secondary" id="btnSalirPanel">Cerrar sesión del panel</button>
     </div>
   </section>
@@ -505,7 +512,8 @@ import {
   onAuthStateChanged, signOut, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, doc, setDoc, getDoc
+  getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc,
+  collection, getDocs, runTransaction, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* =========================================================
@@ -786,16 +794,16 @@ function apiPost(action, payload){
 }
 
 function refreshDataFromServer(onDone, onFail){
-  if(!WEBAPP_URL || WEBAPP_URL.indexOf("PEGA_AQUI") === 0){
-    alert("Falta configurar WEBAPP_URL en el código con el link de tu Apps Script.");
-    return;
-  }
   setSyncStatus("loading");
-  conReintentos(() => apiGet("getData"))
-    .then(function(data){
-      CITAS = data.citas || [];
-      BLOQUEOS = data.bloqueos || [];
-      HORAS_BLOQUEADAS = data.horasBloqueadas || [];
+  Promise.all([
+    getDocs(collection(db, "citas")),
+    getDocs(collection(db, "bloqueosDias")),
+    getDocs(collection(db, "bloqueosHoras"))
+  ])
+    .then(([citasSnap, bloqueosSnap, horasSnap]) => {
+      CITAS = citasSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      BLOQUEOS = bloqueosSnap.docs.map(d => d.data());
+      HORAS_BLOQUEADAS = horasSnap.docs.map(d => d.data());
       dataLoaded = true;
       setSyncStatus("ok");
       if(onDone) onDone();
@@ -1042,7 +1050,9 @@ btnReservar.addEventListener("click", () => {
     time: minutesToLabel(selectedSlot),
     name: nombreInput.value.trim(),
     phone: celularInput.value.trim(),
-    email: currentUser ? currentUser.email : ""
+    email: currentUser ? currentUser.email : "",
+    status: "pendiente",
+    createdAt: new Date().toISOString()
   };
 
   // Si este cliente ya tiene una cita activa (pendiente o retrasada) sin cumplir
@@ -1067,20 +1077,27 @@ btnReservar.addEventListener("click", () => {
   btnReservar.disabled = true;
   btnReservar.textContent = "Guardando…";
 
-  conReintentos(() => apiPost("crearCita", cita))
-    .then((res) => {
-      btnReservar.textContent = "Confirmar cita";
-      if(!res.ok){
-        alert(res.message || "No se pudo registrar la cita. Intenta de nuevo.");
-        updateButtonState();
-        refreshDataFromServer(() => renderSlots(dateStr));
-        return;
+  const citaId = `${cita.date}_${cita.minutes}`;
+  const citaRef = doc(db, "citas", citaId);
+
+  // La reserva real ocurre aquí, directo en Firestore — esto es lo que el
+  // cliente espera, y es rápido y confiable. La transacción evita que dos
+  // personas reserven el mismo horario al mismo tiempo.
+  runTransaction(db, (transaction) => {
+    return transaction.get(citaRef).then((snap) => {
+      if(snap.exists()){
+        throw new Error("OCUPADO");
       }
-      const appt = res.appt;
-      document.getElementById("cNombre").textContent = appt.name;
-      document.getElementById("cCelular").textContent = appt.phone;
-      document.getElementById("cFecha").textContent = prettyDate(appt.date);
-      document.getElementById("cHora").textContent = appt.time;
+      transaction.set(citaRef, cita);
+    });
+  })
+    .then(() => {
+      btnReservar.textContent = "Confirmar cita";
+
+      document.getElementById("cNombre").textContent = cita.name;
+      document.getElementById("cCelular").textContent = cita.phone;
+      document.getElementById("cFecha").textContent = prettyDate(cita.date);
+      document.getElementById("cHora").textContent = cita.time;
 
       // Telegram queda vinculado a la CUENTA del cliente (su correo), no a
       // esta cita puntual. Si ya lo activó antes, no le mostramos el botón
@@ -1105,14 +1122,23 @@ btnReservar.addEventListener("click", () => {
       diaInfo.style.display = "none";
       confirmCard.style.display = "block";
       confirmCard.scrollIntoView({behavior:"smooth", block:"start"});
+
+      // Copia de respaldo hacia Google Sheets / correos / Telegram del barbero.
+      // Esto pasa DESPUÉS de confirmarle la cita al cliente, en segundo plano.
+      // Si esto falla (Apps Script lento o caído), al cliente no le afecta en
+      // nada — su cita YA quedó guardada arriba, en Firestore.
+      apiPost("crearCita", { ...cita, id: citaId }).catch(() => { /* respaldo best-effort */ });
+
+      CITAS.push({ id: citaId, ...cita });
     })
     .catch((err) => {
       btnReservar.textContent = "Confirmar cita";
       updateButtonState();
-      alert(
-        "La reserva está tardando más de lo normal y no pudimos confirmarla en pantalla.\n\n" +
-        "Antes de intentar de nuevo: vuelve a elegir esta misma fecha y revisa si esa hora ya aparece como 'Ocupado' en la lista — si es así, tu cita SÍ quedó guardada y no necesitas repetirla."
-      );
+      if(err && err.message === "OCUPADO"){
+        alert("Ese horario acaba de ser reservado por otra persona. Elige otro, por favor.");
+      }else{
+        alert("No se pudo registrar la cita. Revisa tu conexión e intenta de nuevo.");
+      }
       refreshDataFromServer(() => renderSlots(dateStr));
     });
 });
@@ -1268,8 +1294,11 @@ function renderListaCitas(){
       delBtn.addEventListener("click", () => {
         if(confirm(`¿Cancelar la cita de ${a.name} el ${prettyDate(a.date)} a las ${a.time}?`)){
           delBtn.disabled = true;
-          apiPost("cancelarCita", { id: a.id })
-            .then(() => refreshDataFromServer(refreshBarberPanel))
+          deleteDoc(doc(db, "citas", a.id))
+            .then(() => {
+              apiPost("cancelarCita", { id: a.id }).catch(() => { /* respaldo best-effort */ });
+              refreshDataFromServer(refreshBarberPanel);
+            })
             .catch(() => { alert("No se pudo cancelar. Intenta de nuevo."); delBtn.disabled = false; });
         }
       });
@@ -1285,8 +1314,11 @@ document.getElementById("listaCitas").addEventListener("change", (e) => {
   const id = e.target.dataset.id;
   const val = e.target.value;
   e.target.disabled = true;
-  apiPost("actualizarEstado", { id: id, status: val })
-    .then(() => refreshDataFromServer(refreshBarberPanel))
+  updateDoc(doc(db, "citas", id), { status: val })
+    .then(() => {
+      apiPost("actualizarEstado", { id: id, status: val }).catch(() => { /* respaldo best-effort */ });
+      refreshDataFromServer(refreshBarberPanel);
+    })
     .catch(() => { alert("No se pudo actualizar el estado. Intenta de nuevo."); e.target.disabled = false; });
 });
 
@@ -1339,19 +1371,19 @@ document.getElementById("btnBloquear").addEventListener("click", () => {
   btn.disabled = true;
   btn.textContent = "Bloqueando…";
 
-  apiPost("bloquearDia", { date: dateStr, reason: motivo })
-    .then((res) => {
+  setDoc(doc(db, "bloqueosDias", dateStr), { date: dateStr, reason: motivo })
+    .then(() => {
       btn.disabled = false;
       btn.textContent = "Bloquear día";
-      if(!res.ok){ alert(res.message || "No se pudo bloquear el día."); return; }
       bloqueoFecha.value = "";
       document.getElementById("bloqueoMotivo").value = "";
+      apiPost("bloquearDia", { date: dateStr, reason: motivo }).catch(() => { /* respaldo best-effort */ });
       refreshDataFromServer(refreshBarberPanel);
     })
     .catch(() => {
       btn.disabled = false;
       btn.textContent = "Bloquear día";
-      alert("No se pudo conectar. Intenta de nuevo.");
+      alert("No se pudo bloquear el día. Intenta de nuevo.");
     });
 });
 
@@ -1379,8 +1411,11 @@ function renderBloqueos(){
     unBtn.textContent = "Desbloquear";
     unBtn.addEventListener("click", () => {
       unBtn.disabled = true;
-      apiPost("desbloquearDia", { date: b.date })
-        .then(() => refreshDataFromServer(refreshBarberPanel))
+      deleteDoc(doc(db, "bloqueosDias", b.date))
+        .then(() => {
+          apiPost("desbloquearDia", { date: b.date }).catch(() => { /* respaldo best-effort */ });
+          refreshDataFromServer(refreshBarberPanel);
+        })
         .catch(() => { alert("No se pudo desbloquear. Intenta de nuevo."); unBtn.disabled = false; });
     });
     item.appendChild(unBtn);
@@ -1432,20 +1467,21 @@ document.getElementById("btnBloquearHora").addEventListener("click", () => {
   btn.disabled = true;
   btn.textContent = "Bloqueando…";
 
-  apiPost("bloquearHora", { date: dateStr, minutes: Number(minutes), time: time, reason: motivo })
-    .then((res) => {
+  const horaId = `${dateStr}_${minutes}`;
+  setDoc(doc(db, "bloqueosHoras", horaId), { date: dateStr, minutes: Number(minutes), time: time, reason: motivo })
+    .then(() => {
       btn.disabled = false;
       btn.textContent = "Bloquear hora";
-      if(!res.ok){ alert(res.message || "No se pudo bloquear esa hora."); return; }
       bloqueoHoraFecha.value = "";
       bloqueoHoraSelect.innerHTML = '<option value="">Elige una fecha primero</option>';
       document.getElementById("bloqueoHoraMotivo").value = "";
+      apiPost("bloquearHora", { date: dateStr, minutes: Number(minutes), time: time, reason: motivo }).catch(() => { /* respaldo best-effort */ });
       refreshDataFromServer(refreshBarberPanel);
     })
     .catch(() => {
       btn.disabled = false;
       btn.textContent = "Bloquear hora";
-      alert("No se pudo conectar. Intenta de nuevo.");
+      alert("No se pudo bloquear esa hora. Intenta de nuevo.");
     });
 });
 
@@ -1473,8 +1509,11 @@ function renderHorasBloqueadas(){
     unBtn.textContent = "Desbloquear";
     unBtn.addEventListener("click", () => {
       unBtn.disabled = true;
-      apiPost("desbloquearHora", { date: h.date, minutes: h.minutes })
-        .then(() => refreshDataFromServer(refreshBarberPanel))
+      deleteDoc(doc(db, "bloqueosHoras", `${h.date}_${h.minutes}`))
+        .then(() => {
+          apiPost("desbloquearHora", { date: h.date, minutes: h.minutes }).catch(() => { /* respaldo best-effort */ });
+          refreshDataFromServer(refreshBarberPanel);
+        })
         .catch(() => { alert("No se pudo desbloquear. Intenta de nuevo."); unBtn.disabled = false; });
     });
     item.appendChild(unBtn);
@@ -1560,6 +1599,73 @@ function esIOS(){
 if(esIOS() && !yaEstaInstalada()){
   iosInstallHint.style.display = "block";
 }
+
+/* =========================================================
+   MIGRACIÓN ÚNICA: Sheets -> Firestore
+   ========================================================= */
+document.getElementById("btnMigrar").addEventListener("click", () => {
+  const btn = document.getElementById("btnMigrar");
+  const resultado = document.getElementById("migrarResultado");
+  const ok = confirm("Esto va a copiar TODAS tus citas y bloqueos actuales de Google Sheets hacia Firestore. Es seguro repetirlo si hace falta (no duplica ni borra nada). ¿Continuar?");
+  if(!ok) return;
+
+  btn.disabled = true;
+  btn.textContent = "Migrando…";
+  resultado.style.display = "block";
+  resultado.textContent = "Consultando tu Google Sheet…";
+
+  apiGet("getData")
+    .then(async (data) => {
+      const citasSheet = data.citas || [];
+      const bloqueosSheet = data.bloqueos || [];
+      const horasSheet = data.horasBloqueadas || [];
+
+      let total = citasSheet.length + bloqueosSheet.length + horasSheet.length;
+      resultado.textContent = `Migrando ${total} registros (citas: ${citasSheet.length}, días bloqueados: ${bloqueosSheet.length}, horas bloqueadas: ${horasSheet.length})…`;
+
+      // Firestore permite hasta 500 operaciones por lote, así que dividimos en grupos.
+      const operaciones = [];
+
+      citasSheet.forEach(c => {
+        const id = `${c.date}_${c.minutes}`;
+        operaciones.push({ ref: doc(db, "citas", id), data: {
+          date: c.date, minutes: c.minutes, time: c.time, name: c.name,
+          phone: c.phone, email: c.email || "", status: c.status || "pendiente",
+          createdAt: c.createdAt || new Date().toISOString()
+        }});
+      });
+
+      bloqueosSheet.forEach(b => {
+        operaciones.push({ ref: doc(db, "bloqueosDias", b.date), data: { date: b.date, reason: b.reason || "" } });
+      });
+
+      horasSheet.forEach(h => {
+        const id = `${h.date}_${h.minutes}`;
+        operaciones.push({ ref: doc(db, "bloqueosHoras", id), data: { date: h.date, minutes: h.minutes, time: h.time, reason: h.reason || "" } });
+      });
+
+      const TAMANO_LOTE = 450;
+      let migrados = 0;
+      for(let i = 0; i < operaciones.length; i += TAMANO_LOTE){
+        const lote = operaciones.slice(i, i + TAMANO_LOTE);
+        const batch = writeBatch(db);
+        lote.forEach(op => batch.set(op.ref, op.data));
+        await batch.commit();
+        migrados += lote.length;
+        resultado.textContent = `Migrando… (${migrados} de ${operaciones.length})`;
+      }
+
+      resultado.textContent = `✅ Listo: se migraron ${citasSheet.length} citas, ${bloqueosSheet.length} días bloqueados y ${horasSheet.length} horas bloqueadas. Ya puedes compartir tu link con confianza.`;
+      btn.disabled = false;
+      btn.textContent = "Migrar historial ahora";
+      refreshDataFromServer(refreshBarberPanel);
+    })
+    .catch((err) => {
+      resultado.textContent = "❌ No se pudo migrar. Revisa tu conexión e intenta de nuevo.";
+      btn.disabled = false;
+      btn.textContent = "Migrar historial ahora";
+    });
+});
 
 /* =========================================================
    ARRANQUE
