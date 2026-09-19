@@ -1612,7 +1612,7 @@ document.getElementById("btnMigrar").addEventListener("click", () => {
   btn.disabled = true;
   btn.textContent = "Migrando…";
   resultado.style.display = "block";
-  resultado.textContent = "Consultando tu Google Sheet…";
+  resultado.textContent = `Sesión activa: ${currentUser ? currentUser.email : "NINGUNA (no has iniciado sesión)"}. Consultando tu Google Sheet…`;
 
   apiGet("getData")
     .then(async (data) => {
@@ -1661,7 +1661,8 @@ document.getElementById("btnMigrar").addEventListener("click", () => {
       refreshDataFromServer(refreshBarberPanel);
     })
     .catch((err) => {
-      resultado.textContent = "❌ No se pudo migrar. Revisa tu conexión e intenta de nuevo.";
+      console.error("Error de migración:", err);
+      resultado.textContent = `❌ No se pudo migrar (sesión: ${currentUser ? currentUser.email : "ninguna"}). Detalle: ` + (err && err.message ? err.message : String(err));
       btn.disabled = false;
       btn.textContent = "Migrar historial ahora";
     });
