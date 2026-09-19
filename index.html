@@ -756,12 +756,12 @@ function fetchConTimeout(url, options, timeoutMs){
     .finally(() => clearTimeout(timer));
 }
 
-function apiGet(action, params){
+function apiGet(action, params, timeoutMs){
   let url = WEBAPP_URL + "?action=" + encodeURIComponent(action);
   if(params){
     Object.keys(params).forEach(k => { url += "&" + encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); });
   }
-  return fetchConTimeout(url, {}, 15000).then(function(r){ return r.json(); });
+  return fetchConTimeout(url, {}, timeoutMs || 15000).then(function(r){ return r.json(); });
 }
 
 // Si una consulta falla (por ejemplo, un bache breve de señal), la
@@ -1614,7 +1614,7 @@ document.getElementById("btnMigrar").addEventListener("click", () => {
   resultado.style.display = "block";
   resultado.textContent = `Sesión activa: ${currentUser ? currentUser.email : "NINGUNA (no has iniciado sesión)"}. Consultando tu Google Sheet…`;
 
-  apiGet("getData")
+  conReintentos(() => apiGet("getData", null, 60000), 2)
     .then(async (data) => {
       const citasSheet = data.citas || [];
       const bloqueosSheet = data.bloqueos || [];
