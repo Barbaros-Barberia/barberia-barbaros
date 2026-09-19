@@ -445,7 +445,9 @@
 
       <div class="card">
         <h2>Resumen de citas <span class="tag">Barbero</span></h2>
-        <div id="listaCitas"></div>
+        <label for="resumenFecha">Fecha a ver</label>
+        <input type="date" id="resumenFecha">
+        <div id="listaCitas" style="margin-top:14px;"></div>
       </div>
 
       <div class="card">
@@ -1233,6 +1235,8 @@ function refreshBarberPanel(){
   renderHorasBloqueadas();
 }
 
+document.getElementById("resumenFecha").addEventListener("change", renderListaCitas);
+
 function renderStats(){
   document.getElementById("statTotal").textContent = CITAS.length;
   const hoy = todayStr();
@@ -1254,26 +1258,25 @@ function renderListaCitas(){
   const wrap = document.getElementById("listaCitas");
   wrap.innerHTML = "";
 
-  // El resumen solo muestra lo que aún necesita atención (pendiente/retrasada).
-  // Lo ya realizado se archiva y se consulta desde "Buscar histórico".
-  const citasActivas = CITAS.filter(a => getStatus(a) !== "realizada");
+  const resumenFecha = document.getElementById("resumenFecha");
+  if(!resumenFecha.value) resumenFecha.value = todayStr();
+  const fechaElegida = resumenFecha.value;
+
+  // El resumen solo muestra lo que aún necesita atención (pendiente/retrasada)
+  // en la fecha elegida. Lo ya realizado se archiva y se consulta desde "Buscar histórico".
+  const citasActivas = CITAS.filter(a => getStatus(a) !== "realizada" && a.date === fechaElegida);
 
   if(citasActivas.length === 0){
-    wrap.innerHTML = '<div class="empty">No hay citas pendientes por atender. Lo ya realizado lo puedes ver en "Buscar histórico".</div>';
+    wrap.innerHTML = `<div class="empty">No hay citas pendientes para el ${prettyDate(fechaElegida)}.</div>`;
     return;
   }
 
-  const byDate = {};
-  citasActivas.forEach(a => { (byDate[a.date] = byDate[a.date] || []).push(a); });
-  const dates = Object.keys(byDate).sort();
+  const title = document.createElement("div");
+  title.className = "group-title";
+  title.textContent = prettyDate(fechaElegida);
+  wrap.appendChild(title);
 
-  dates.forEach(dateStr => {
-    const title = document.createElement("div");
-    title.className = "group-title";
-    title.textContent = prettyDate(dateStr);
-    wrap.appendChild(title);
-
-    byDate[dateStr].sort((a,b) => a.minutes - b.minutes).forEach(a => {
+  citasActivas.sort((a,b) => a.minutes - b.minutes).forEach(a => {
       const status = getStatus(a);
       const item = document.createElement("div");
       item.className = "appt-item";
@@ -1305,7 +1308,6 @@ function renderListaCitas(){
       item.querySelector(".right").appendChild(delBtn);
       wrap.appendChild(item);
     });
-  });
 }
 
 // El barbero cambia el estado de una cita (pendiente / retrasada / realizada)
