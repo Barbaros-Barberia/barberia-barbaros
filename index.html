@@ -1235,6 +1235,7 @@ function refreshBarberPanel(){
   renderHorasBloqueadas();
 }
 
+document.getElementById("resumenFecha").min = todayStr();
 document.getElementById("resumenFecha").addEventListener("change", renderListaCitas);
 
 function renderStats(){
