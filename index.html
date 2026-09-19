@@ -1078,14 +1078,29 @@ btnReservar.addEventListener("click", () => {
   // La reserva real ocurre aquí, directo en Firestore — esto es lo que el
   // cliente espera, y es rápido y confiable. La transacción evita que dos
   // personas reserven el mismo horario al mismo tiempo.
-  runTransaction(db, (transaction) => {
-    return transaction.get(citaRef).then((snap) => {
-      if(snap.exists()){
-        throw new Error("OCUPADO");
+  function intentarReservar(intentosRestantes){
+    return runTransaction(db, (transaction) => {
+      return transaction.get(citaRef).then((snap) => {
+        if(snap.exists()){
+          throw new Error("OCUPADO");
+        }
+        transaction.set(citaRef, cita);
+      });
+    }).catch((err) => {
+      // "resource-exhausted" es un límite TEMPORAL de Firestore (por ejemplo,
+      // justo después de una ráfaga grande de escrituras). Reintentamos solo,
+      // esperando un poco más cada vez, antes de rendirnos.
+      const esLimiteTemporal = err && (err.code === "resource-exhausted" || /quota/i.test(err.message || ""));
+      if(esLimiteTemporal && intentosRestantes > 0){
+        const espera = (4 - intentosRestantes) * 2500;
+        return new Promise((resolve) => setTimeout(resolve, espera))
+          .then(() => intentarReservar(intentosRestantes - 1));
       }
-      transaction.set(citaRef, cita);
+      throw err;
     });
-  })
+  }
+
+  intentarReservar(3)
     .then(() => {
       btnReservar.textContent = "Confirmar cita";
 
@@ -1130,8 +1145,11 @@ btnReservar.addEventListener("click", () => {
       console.error("Error al reservar:", err);
       btnReservar.textContent = "Confirmar cita";
       updateButtonState();
+      const esLimiteTemporal = err && (err.code === "resource-exhausted" || /quota/i.test(err.message || ""));
       if(err && err.message === "OCUPADO"){
         alert("Ese horario acaba de ser reservado por otra persona. Elige otro, por favor.");
+      }else if(esLimiteTemporal){
+        alert("El sistema está muy ocupado en este momento. Por favor espera un minuto y vuelve a intentar — tu información no se perdió, solo hay que esperar un poco.");
       }else{
         alert("No se pudo registrar la cita. Detalle: " + (err && err.message ? err.message : String(err)));
       }
