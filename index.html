@@ -1127,12 +1127,13 @@ btnReservar.addEventListener("click", () => {
       CITAS.push({ id: citaId, ...cita });
     })
     .catch((err) => {
+      console.error("Error al reservar:", err);
       btnReservar.textContent = "Confirmar cita";
       updateButtonState();
       if(err && err.message === "OCUPADO"){
         alert("Ese horario acaba de ser reservado por otra persona. Elige otro, por favor.");
       }else{
-        alert("No se pudo registrar la cita. Revisa tu conexión e intenta de nuevo.");
+        alert("No se pudo registrar la cita. Detalle: " + (err && err.message ? err.message : String(err)));
       }
       refreshDataFromServer(() => renderSlots(dateStr));
     });
