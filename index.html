@@ -508,7 +508,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc,
-  collection, getDocs, runTransaction
+  collection, getDocs, runTransaction, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* =========================================================
@@ -788,26 +788,62 @@ function apiPost(action, payload){
   }).then(function(r){ return r.json(); });
 }
 
+let listenersIniciados = false;
+const primerSnapshotListo = { citas: false, bloqueosDias: false, bloqueosHoras: false };
+let callbacksPrimeraCarga = [];
+
+// Se conecta UNA sola vez a Firestore y se queda "escuchando" cambios reales
+// (nuevas citas, cancelaciones, bloqueos). Esto reemplaza el releer todo
+// cada vez, que era lo que agotaba la cuota gratis de lecturas.
+function iniciarListenersUnaVez(){
+  if(listenersIniciados) return;
+  listenersIniciados = true;
+
+  onSnapshot(collection(db, "citas"), (snap) => {
+    CITAS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    primerSnapshotListo.citas = true;
+    dataLoaded = true;
+    intentarResolverPrimeraCarga();
+    if(barberUnlocked){ checkForNewCitas(); renderStats(); renderListaCitas(); }
+  }, (err) => { console.error("Error en escucha de citas:", err); setSyncStatus("error"); });
+
+  onSnapshot(collection(db, "bloqueosDias"), (snap) => {
+    BLOQUEOS = snap.docs.map(d => d.data());
+    primerSnapshotListo.bloqueosDias = true;
+    intentarResolverPrimeraCarga();
+    if(barberUnlocked) renderBloqueos();
+  }, (err) => { console.error("Error en escucha de bloqueosDias:", err); });
+
+  onSnapshot(collection(db, "bloqueosHoras"), (snap) => {
+    HORAS_BLOQUEADAS = snap.docs.map(d => d.data());
+    primerSnapshotListo.bloqueosHoras = true;
+    intentarResolverPrimeraCarga();
+    if(barberUnlocked) renderHorasBloqueadas();
+  }, (err) => { console.error("Error en escucha de bloqueosHoras:", err); });
+}
+
+function intentarResolverPrimeraCarga(){
+  if(primerSnapshotListo.citas && primerSnapshotListo.bloqueosDias && primerSnapshotListo.bloqueosHoras){
+    setSyncStatus("ok");
+    callbacksPrimeraCarga.forEach(cb => cb());
+    callbacksPrimeraCarga = [];
+  }
+}
+
 function refreshDataFromServer(onDone, onFail){
   setSyncStatus("loading");
-  Promise.all([
-    getDocs(collection(db, "citas")),
-    getDocs(collection(db, "bloqueosDias")),
-    getDocs(collection(db, "bloqueosHoras"))
-  ])
-    .then(([citasSnap, bloqueosSnap, horasSnap]) => {
-      CITAS = citasSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      BLOQUEOS = bloqueosSnap.docs.map(d => d.data());
-      HORAS_BLOQUEADAS = horasSnap.docs.map(d => d.data());
-      dataLoaded = true;
-      setSyncStatus("ok");
-      if(onDone) onDone();
-    })
-    .catch(function(err){
-      setSyncStatus("error");
-      if(onFail) onFail(err);
-      else console.error(err);
-    });
+  iniciarListenersUnaVez();
+  if(dataLoaded){
+    // Ya tenemos datos frescos en memoria gracias a la escucha en tiempo
+    // real — no hace falta volver a leer nada de Firestore.
+    setSyncStatus("ok");
+    if(onDone) onDone();
+  }else{
+    callbacksPrimeraCarga.push(() => { if(onDone) onDone(); });
+    setTimeout(() => {
+      if(!dataLoaded && onFail) onFail(new Error("No se pudo conectar con la base de datos."));
+    }, 15000);
+  }
 }
 
 function setSyncStatus(state){
@@ -1185,8 +1221,11 @@ function checkPin(){
     refreshDataFromServer(refreshBarberPanel);
     if(pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(() => {
-      if(barberUnlocked) refreshDataFromServer(refreshBarberPanel);
-    }, 25000); // se auto-actualiza cada 25 segundos
+      // Solo re-renderiza con los datos que ya tenemos en memoria (para que
+      // "Retrasada" se actualice sola con el paso del tiempo). No vuelve a
+      // leer Firestore — eso ya lo hace la escucha en tiempo real, sola.
+      if(barberUnlocked) refreshBarberPanel();
+    }, 25000); // refresca la pantalla cada 25 segundos, sin costo de lecturas
   }else{
     pinError.textContent = "PIN incorrecto. Intenta de nuevo.";
     pinInput.value = "";
