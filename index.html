@@ -169,6 +169,28 @@
   input:disabled{opacity:0.5;}
   ::placeholder{color:#6f6357;}
 
+  .dias-scroll{
+    display:flex; gap:8px; overflow-x:auto; padding:2px 2px 10px;
+    scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch;
+  }
+  .dias-scroll::-webkit-scrollbar{height:5px;}
+  .dias-scroll::-webkit-scrollbar-thumb{background:var(--line); border-radius:10px;}
+  .dia-card{
+    flex:0 0 auto; scroll-snap-align:start;
+    width:68px; padding:10px 4px; border-radius:12px;
+    border:1px solid var(--line); background:var(--panel-2); color:var(--cream);
+    font-family:'Inter'; cursor:pointer; text-align:center;
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+  }
+  .dia-card .dia-nombre{font-size:11px; color:var(--cream-dim); text-transform:uppercase; letter-spacing:0.03em;}
+  .dia-card .dia-numero{font-family:'Bebas Neue'; font-size:22px; line-height:1;}
+  .dia-card .dia-estado{font-size:9.5px; color:var(--brass-bright); font-weight:700;}
+  .dia-card.selected{background:var(--brass); border-color:var(--brass); color:#20160a;}
+  .dia-card.selected .dia-nombre{color:#3a2f1a;}
+  .dia-card.selected .dia-estado{color:#3a2f1a;}
+  .dia-card.cerrado{opacity:0.4; cursor:not-allowed;}
+  .dia-card.cerrado .dia-estado{color:var(--cream-dim);}
+
   .day-note{
     margin-top:10px; font-size:13px; color:var(--cream-dim);
     background:var(--panel-2); border:1px dashed var(--line); border-radius:10px; padding:10px 12px;
@@ -371,7 +393,8 @@
       <h2>Reservar cita <span class="tag">Cliente</span></h2>
 
       <label for="fecha">Elige el día</label>
-      <input type="date" id="fecha" autocomplete="off" disabled>
+      <input type="date" id="fecha" autocomplete="off" disabled style="display:none;">
+      <div class="dias-scroll" id="diasScroll"></div>
       <div id="cargandoFecha" class="day-note" style="display:none;">⏳ Consultando horarios disponibles…</div>
       <div id="diaInfo" class="day-note" style="display:none;"></div>
       <div id="cerradoMsg" class="closed-msg" style="display:none;"></div>
@@ -805,6 +828,7 @@ function iniciarListenersUnaVez(){
     dataLoaded = true;
     intentarResolverPrimeraCarga();
     if(barberUnlocked){ checkForNewCitas(); renderStats(); renderListaCitas(); }
+    renderDiasScroller();
   }, (err) => { console.error("Error en escucha de citas:", err); setSyncStatus("error"); });
 
   onSnapshot(collection(db, "bloqueosDias"), (snap) => {
@@ -812,6 +836,7 @@ function iniciarListenersUnaVez(){
     primerSnapshotListo.bloqueosDias = true;
     intentarResolverPrimeraCarga();
     if(barberUnlocked) renderBloqueos();
+    renderDiasScroller();
   }, (err) => { console.error("Error en escucha de bloqueosDias:", err); });
 
   onSnapshot(collection(db, "bloqueosHoras"), (snap) => {
@@ -819,6 +844,7 @@ function iniciarListenersUnaVez(){
     primerSnapshotListo.bloqueosHoras = true;
     intentarResolverPrimeraCarga();
     if(barberUnlocked) renderHorasBloqueadas();
+    renderDiasScroller();
   }, (err) => { console.error("Error en escucha de bloqueosHoras:", err); });
 }
 
@@ -904,6 +930,31 @@ function generateSlots(dateStr){
   return slots;
 }
 
+// Cuenta cuántos horarios quedan libres en un día (para las tarjetas del
+// scroller), teniendo en cuenta bloqueos de día, de hora, citas ya tomadas
+// y horas que ya pasaron (si es hoy).
+function contarLibres(dateStr){
+  if(isBlocked(dateStr)) return { libres: 0, cerrado: true };
+
+  const todosLosSlots = generateSlots(dateStr);
+  if(todosLosSlots.length === 0) return { libres: 0, cerrado: true };
+
+  const tomadas = CITAS.filter(a => a.date === dateStr).map(a => a.minutes);
+  const bloqueadas = HORAS_BLOQUEADAS.filter(h => h.date === dateStr).map(h => h.minutes);
+  const esHoy = dateStr === todayStr();
+  const ahora = new Date();
+  const minutosAhora = ahora.getHours() * 60 + ahora.getMinutes();
+
+  const libres = todosLosSlots.filter(m => {
+    if(tomadas.includes(m)) return false;
+    if(bloqueadas.includes(m)) return false;
+    if(esHoy && m <= minutosAhora) return false;
+    return true;
+  }).length;
+
+  return { libres, cerrado: libres === 0 };
+}
+
 function todayStr(){
   const d = new Date();
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -980,8 +1031,46 @@ function resetClientView(){
   cerradoMsg.style.display = "none";
   document.getElementById("cargandoFecha").style.display = "none";
   if(currentUser && currentProfile) applyProfileToForm();
+  renderDiasScroller();
 }
 window.addEventListener("pageshow", resetClientView);
+
+// Dibuja las tarjetas de día (hoy + próximas 3 semanas) con sus cupos
+// disponibles, o "Cerrado" si el día no tiene horarios libres.
+function renderDiasScroller(){
+  const wrap = document.getElementById("diasScroll");
+  if(!wrap) return;
+  wrap.innerHTML = "";
+
+  const DIAS_CORTO = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const hoy = new Date();
+  const DIAS_A_MOSTRAR = 21;
+
+  for(let i = 0; i < DIAS_A_MOSTRAR; i++){
+    const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + i);
+    const dateStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const info = contarLibres(dateStr);
+    const seleccionado = dateStr === fechaInput.value;
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "dia-card" + (info.cerrado ? " cerrado" : "") + (seleccionado ? " selected" : "");
+    card.innerHTML = `
+      <span class="dia-nombre">${i === 0 ? "Hoy" : DIAS_CORTO[d.getDay()]}</span>
+      <span class="dia-numero">${d.getDate()}</span>
+      <span class="dia-estado">${info.cerrado ? "Cerrado" : info.libres + " libres"}</span>
+    `;
+    if(!info.cerrado){
+      card.addEventListener("click", () => {
+        fechaInput.value = dateStr;
+        fechaInput.dispatchEvent(new Event("change"));
+      });
+    }else{
+      card.disabled = true;
+    }
+    wrap.appendChild(card);
+  }
+}
 
 // Al cambiar la fecha, primero traemos los datos más recientes del Sheet
 // (para no mostrar un horario "libre" que alguien ya tomó hace un minuto).
@@ -993,6 +1082,7 @@ fechaInput.addEventListener("change", () => {
     fechaInput.disabled = false;
     document.getElementById("cargandoFecha").style.display = "none";
     renderClientDay();
+    renderDiasScroller();
   }, () => {
     fechaInput.disabled = false;
     document.getElementById("cargandoFecha").style.display = "none";
