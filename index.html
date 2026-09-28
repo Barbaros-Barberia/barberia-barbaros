@@ -653,6 +653,16 @@ authForgot.addEventListener("click", () => {
     });
 });
 
+// Pone un límite de tiempo a cualquier promesa: si no se resuelve a
+// tiempo (señal débil, red inestable), la "corta" con un error claro
+// en vez de dejar el botón pegado para siempre en silencio.
+function conLimiteDeTiempo(promesa, ms, mensajeError){
+  return Promise.race([
+    promesa,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(mensajeError || "TIEMPO_AGOTADO")), ms))
+  ]);
+}
+
 authSubmit.addEventListener("click", () => {
   authError.textContent = "";
   authError.style.color = "#e7b7ac";
@@ -663,9 +673,12 @@ authSubmit.addEventListener("click", () => {
   if(authMode === "login"){
     const email = document.getElementById("authEmail").value.trim();
     const pass = document.getElementById("authPass").value;
-    signInWithEmailAndPassword(auth, email, pass)
+    conLimiteDeTiempo(signInWithEmailAndPassword(auth, email, pass), 20000)
       .then(() => closeAuthModal())
-      .catch((err) => { authError.textContent = friendlyAuthError(err.code); })
+      .catch((err) => {
+        authError.textContent = (err && err.code) ? friendlyAuthError(err.code)
+          : "No se pudo conectar. Revisa tu señal e intenta de nuevo.";
+      })
       .finally(() => { authSubmit.disabled = false; authSubmit.textContent = original; });
   }else{
     const nombre = document.getElementById("regNombre").value.trim();
@@ -679,10 +692,13 @@ authSubmit.addEventListener("click", () => {
       return;
     }
 
-    createUserWithEmailAndPassword(auth, email, pass)
+    conLimiteDeTiempo(createUserWithEmailAndPassword(auth, email, pass), 20000)
       .then((cred) => setDoc(doc(db, "clientes", cred.user.uid), { name: nombre, phone: celular, email: email }))
       .then(() => closeAuthModal())
-      .catch((err) => { authError.textContent = friendlyAuthError(err.code); })
+      .catch((err) => {
+        authError.textContent = (err && err.code) ? friendlyAuthError(err.code)
+          : "No se pudo conectar. Revisa tu señal e intenta de nuevo.";
+      })
       .finally(() => { authSubmit.disabled = false; authSubmit.textContent = original; });
   }
 });
