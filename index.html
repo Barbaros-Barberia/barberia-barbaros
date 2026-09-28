@@ -414,9 +414,10 @@
     </div>
 
     <div class="card" id="confirmCard" style="display:none;">
-      <h2>¡Cita registrada!</h2>
+      <h2>¡Tu cita ha sido confirmada!</h2>
       <div class="confirm">
         <div class="check">✓</div>
+        <div class="day-note" style="margin-bottom:12px; text-align:center;">Todo listo. Te esperamos en Barbería Bárbaros en el día y la hora que ves abajo.</div>
         <div class="row"><span>Barbería</span><span>Bárbaros</span></div>
         <div class="row"><span>Cliente</span><span id="cNombre"></span></div>
         <div class="row"><span>Celular</span><span id="cCelular"></span></div>
@@ -734,6 +735,7 @@ function updateClientGate(){
   }else{
     gate.style.display = "block";
     reserva.classList.add("locked");
+    reserva.style.display = "";
     fechaInput.disabled = true;
     confirmCard.style.display = "none";
   }
@@ -1025,6 +1027,7 @@ function resetClientView(){
   }
   selectedSlot = null;
   confirmCard.style.display = "none";
+  document.getElementById("reservaCard").style.display = "";
   formWrap.style.display = "none";
   slotsWrap.style.display = "none";
   diaInfo.style.display = "none";
@@ -1256,8 +1259,11 @@ btnReservar.addEventListener("click", () => {
       formWrap.style.display = "none";
       slotsWrap.style.display = "none";
       diaInfo.style.display = "none";
+      // Escondemos TODO el panel de reserva (días, horas, formulario) para que
+      // el cliente vea solo el mensaje claro de "Tu cita ha sido confirmada".
+      document.getElementById("reservaCard").style.display = "none";
       confirmCard.style.display = "block";
-      confirmCard.scrollIntoView({behavior:"smooth", block:"start"});
+      window.scrollTo({ top: 0, behavior: "smooth" });
 
       // Copia de respaldo hacia Google Sheets / correos / Telegram del barbero.
       // Esto pasa DESPUÉS de confirmarle la cita al cliente, en segundo plano.
