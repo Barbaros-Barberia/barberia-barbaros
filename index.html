@@ -190,6 +190,7 @@
   .dia-card.selected .dia-estado{color:#3a2f1a;}
   .dia-card.cerrado{opacity:0.4; cursor:not-allowed;}
   .dia-card.cerrado .dia-estado{color:var(--cream-dim);}
+  #diasScrollBarbero .dia-card.cerrado{cursor:pointer;}
 
   .day-note{
     margin-top:10px; font-size:13px; color:var(--cream-dim);
@@ -469,8 +470,9 @@
 
       <div class="card">
         <h2>Resumen de citas <span class="tag">Barbero</span></h2>
-        <label for="resumenFecha">Fecha a ver</label>
-        <input type="date" id="resumenFecha">
+        <label for="resumenFecha">Elige el día</label>
+        <input type="date" id="resumenFecha" style="display:none;">
+        <div class="dias-scroll" id="diasScrollBarbero"></div>
         <div id="listaCitas" style="margin-top:14px;"></div>
       </div>
 
@@ -1402,6 +1404,48 @@ function renderStats(){
   }
 }
 
+// Tarjetas de día para el panel del barbero: en vez de "cupos libres",
+// muestran cuántas citas pendientes/retrasadas hay cada día.
+function renderDiasScrollerBarbero(){
+  const wrap = document.getElementById("diasScrollBarbero");
+  if(!wrap) return;
+  wrap.innerHTML = "";
+
+  const DIAS_CORTO = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const hoy = new Date();
+  const resumenFecha = document.getElementById("resumenFecha");
+  const DIAS_A_MOSTRAR = 30;
+
+  for(let i = 0; i < DIAS_A_MOSTRAR; i++){
+    const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + i);
+    const dateStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const cantidad = CITAS.filter(a => a.date === dateStr && getStatus(a) !== "realizada").length;
+    const cerrado = !!isBlocked(dateStr);
+    const seleccionado = dateStr === resumenFecha.value;
+
+    let estado;
+    if(cerrado) estado = "Cerrado";
+    else if(cantidad === 0) estado = "Sin citas";
+    else estado = cantidad + (cantidad === 1 ? " cita" : " citas");
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "dia-card" + (cerrado ? " cerrado" : "") + (seleccionado ? " selected" : "");
+    card.innerHTML = `
+      <span class="dia-nombre">${i === 0 ? "Hoy" : DIAS_CORTO[d.getDay()]}</span>
+      <span class="dia-numero">${d.getDate()}</span>
+      <span class="dia-estado">${estado}</span>
+    `;
+    // El barbero puede tocar cualquier día (incluso uno "cerrado", por si
+    // ya tenía citas antes de bloquearlo).
+    card.addEventListener("click", () => {
+      resumenFecha.value = dateStr;
+      renderListaCitas();
+    });
+    wrap.appendChild(card);
+  }
+}
+
 function renderListaCitas(){
   const wrap = document.getElementById("listaCitas");
   wrap.innerHTML = "";
@@ -1409,6 +1453,8 @@ function renderListaCitas(){
   const resumenFecha = document.getElementById("resumenFecha");
   if(!resumenFecha.value) resumenFecha.value = todayStr();
   const fechaElegida = resumenFecha.value;
+
+  renderDiasScrollerBarbero();
 
   // El resumen solo muestra lo que aún necesita atención (pendiente/retrasada)
   // en la fecha elegida. Lo ya realizado se archiva y se consulta desde "Buscar histórico".
