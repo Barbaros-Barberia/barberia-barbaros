@@ -278,6 +278,19 @@
   .badge.pendiente{background:rgba(183,188,194,0.16); color:var(--brass-bright); border:1px solid rgba(183,188,194,0.4);}
   .badge.realizada{background:rgba(95,143,91,0.16); color:#9fce9a; border:1px solid rgba(95,143,91,0.4);}
   .badge.retrasada{background:rgba(163,70,56,0.18); color:#e79c86; border:1px solid rgba(163,70,56,0.55);}
+  .badge.cancelada{background:rgba(120,120,120,0.16); color:#b8bcc2; border:1px solid rgba(120,120,120,0.4);}
+
+  .accion-botones{display:flex; gap:6px; margin-top:8px;}
+  .icon-btn{
+    width:32px; height:32px; border-radius:8px; border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    font-size:15px; font-weight:800; text-decoration:none; background:var(--panel-2);
+  }
+  .icon-btn.ok{background:rgba(95,143,91,0.16); border-color:rgba(95,143,91,0.4); color:#9fce9a;}
+  .icon-btn.cancel{background:rgba(163,70,56,0.16); border-color:rgba(163,70,56,0.4); color:#e7b7ac;}
+  .icon-btn.whatsapp{background:rgba(37,211,102,0.16); border-color:rgba(37,211,102,0.45);}
+  .icon-btn.whatsapp svg{width:15px; height:15px;}
+  .icon-btn:disabled{opacity:0.4; cursor:not-allowed;}
   select.badge-select{
     -webkit-appearance:none; appearance:none; font-family:'Inter'; cursor:pointer;
     padding-right:22px;
@@ -392,6 +405,8 @@
 
     <div class="card locked" id="reservaCard">
       <h2>Reservar cita <span class="tag">Cliente</span></h2>
+
+      <div id="misCitasAviso" class="day-note" style="display:none; border:1px solid var(--brass); margin-bottom:14px;"></div>
 
       <label for="fecha">Elige el día</label>
       <input type="date" id="fecha" autocomplete="off" disabled style="display:none;">
@@ -739,6 +754,7 @@ function renderAuthBar(){
     document.getElementById("btnAuthOpen").addEventListener("click", () => openAuthModal("login"));
   }
   updateClientGate();
+  renderMisCitasAviso();
 }
 
 // El login es obligatorio para reservar: mientras no haya sesión, se muestra
@@ -849,6 +865,7 @@ function iniciarListenersUnaVez(){
     intentarResolverPrimeraCarga();
     if(barberUnlocked){ checkForNewCitas(); renderStats(); renderListaCitas(); }
     renderDiasScroller();
+    renderMisCitasAviso();
   }, (err) => { console.error("Error en escucha de citas:", err); setSyncStatus("error"); });
 
   onSnapshot(collection(db, "bloqueosDias"), (snap) => {
@@ -950,6 +967,30 @@ function generateSlots(dateStr){
   return slots;
 }
 
+// Muestra automáticamente, al entrar, si el cliente ya tiene citas
+// agendadas (pendientes o retrasadas) — para que no tenga que adivinar
+// ni escribir para preguntar.
+function renderMisCitasAviso(){
+  const cont = document.getElementById("misCitasAviso");
+  if(!cont) return;
+  if(!currentUser){ cont.style.display = "none"; return; }
+
+  const ahora = new Date();
+  const misCitas = CITAS.filter(a =>
+    a.email === currentUser.email &&
+    getStatus(a) !== "realizada" &&
+    getStatus(a) !== "cancelada" &&
+    apptDateTime(a) >= ahora
+  ).sort((a,b) => apptDateTime(a) - apptDateTime(b));
+
+  if(misCitas.length === 0){ cont.style.display = "none"; return; }
+
+  const lineas = misCitas.map(a => `${prettyDate(a.date)}, ${a.time}`).join("<br>");
+  const plural = misCitas.length === 1 ? "cita agendada" : "citas agendadas";
+  cont.innerHTML = `<b>Ya tienes ${misCitas.length} ${plural}:</b><br>${lineas}<br><br>Si quieres otra cita, completa el formulario de abajo. Para cambiar o cancelar una, escríbenos por WhatsApp.`;
+  cont.style.display = "block";
+}
+
 // Cuenta cuántos horarios quedan libres en un día (para las tarjetas del
 // scroller), teniendo en cuenta bloqueos de día, de hora, citas ya tomadas
 // y horas que ya pasaron (si es hoy).
@@ -959,7 +1000,7 @@ function contarLibres(dateStr){
   const todosLosSlots = generateSlots(dateStr);
   if(todosLosSlots.length === 0) return { libres: 0, cerrado: true };
 
-  const tomadas = CITAS.filter(a => a.date === dateStr).map(a => a.minutes);
+  const tomadas = CITAS.filter(a => a.date === dateStr && a.status !== "cancelada").map(a => a.minutes);
   const bloqueadas = HORAS_BLOQUEADAS.filter(h => h.date === dateStr).map(h => h.minutes);
   const esHoy = dateStr === todayStr();
   const ahora = new Date();
@@ -988,8 +1029,17 @@ function apptDateTime(a){
 
 function getStatus(a){
   if(a.status === "realizada") return "realizada";
+  if(a.status === "cancelada") return "cancelada";
   if(apptDateTime(a) < new Date()) return "retrasada";
   return a.status || "pendiente";
+}
+
+// Teléfono listo para abrir WhatsApp: solo dígitos, con indicativo de
+// país (asume Colombia si el número no lo trae ya).
+function telefonoWhatsapp(numero){
+  let limpio = (numero || "").replace(/\D/g, "");
+  if(limpio.length === 10) limpio = "57" + limpio;
+  return limpio;
 }
 
 function escapeHtml(str){
@@ -1053,6 +1103,7 @@ function resetClientView(){
   document.getElementById("cargandoFecha").style.display = "none";
   if(currentUser && currentProfile) applyProfileToForm();
   renderDiasScroller();
+  renderMisCitasAviso();
 }
 window.addEventListener("pageshow", resetClientView);
 
@@ -1150,7 +1201,7 @@ function renderClientDay(){
 
 function renderSlots(dateStr){
   const allSlots = generateSlots(dateStr);
-  const taken = CITAS.filter(a => a.date === dateStr).map(a => a.minutes);
+  const taken = CITAS.filter(a => a.date === dateStr && a.status !== "cancelada").map(a => a.minutes);
   const horasBloqueadas = HORAS_BLOQUEADAS.filter(h => h.date === dateStr).map(h => h.minutes);
 
   const isToday = dateStr === todayStr();
@@ -1206,6 +1257,7 @@ btnReservar.addEventListener("click", () => {
     const citaActiva = CITAS.find(a =>
       a.email === currentUser.email &&
       getStatus(a) !== "realizada" &&
+      getStatus(a) !== "cancelada" &&
       apptDateTime(a) >= ahora
     );
     if(citaActiva){
@@ -1228,7 +1280,7 @@ btnReservar.addEventListener("click", () => {
   function intentarReservar(intentosRestantes){
     return runTransaction(db, (transaction) => {
       return transaction.get(citaRef).then((snap) => {
-        if(snap.exists()){
+        if(snap.exists() && snap.data().status !== "cancelada"){
           throw new Error("OCUPADO");
         }
         transaction.set(citaRef, cita);
@@ -1435,7 +1487,7 @@ function renderDiasScrollerBarbero(){
   for(let i = 0; i < DIAS_A_MOSTRAR; i++){
     const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + i);
     const dateStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-    const cantidad = CITAS.filter(a => a.date === dateStr && getStatus(a) !== "realizada").length;
+    const cantidad = CITAS.filter(a => a.date === dateStr && getStatus(a) !== "realizada" && getStatus(a) !== "cancelada").length;
     const cerrado = !!isBlocked(dateStr);
     const seleccionado = dateStr === resumenFecha.value;
 
@@ -1473,8 +1525,10 @@ function renderListaCitas(){
   renderDiasScrollerBarbero();
 
   // El resumen solo muestra lo que aún necesita atención (pendiente/retrasada)
-  // en la fecha elegida. Lo ya realizado se archiva y se consulta desde "Buscar histórico".
-  const citasActivas = CITAS.filter(a => getStatus(a) !== "realizada" && a.date === fechaElegida);
+  // en la fecha elegida. Lo realizado o cancelado se consulta en "Buscar histórico".
+  const citasActivas = CITAS.filter(a =>
+    getStatus(a) !== "realizada" && getStatus(a) !== "cancelada" && a.date === fechaElegida
+  );
 
   if(citasActivas.length === 0){
     wrap.innerHTML = `<div class="empty">No hay citas pendientes para el ${prettyDate(fechaElegida)}.</div>`;
@@ -1488,50 +1542,41 @@ function renderListaCitas(){
 
   citasActivas.sort((a,b) => a.minutes - b.minutes).forEach(a => {
       const status = getStatus(a);
+      const statusLabel = status === "retrasada" ? "Retrasada" : "Pendiente";
       const item = document.createElement("div");
       item.className = "appt-item";
       item.innerHTML = `
         <div class="info"><b>${escapeHtml(a.name)}</b><span>${escapeHtml(a.phone)}</span></div>
         <div class="right">
           <div class="when">${a.time}</div>
-          <select class="badge badge-select ${status}" data-id="${a.id}">
-            <option value="pendiente" ${status === "pendiente" ? "selected" : ""}>Pendiente</option>
-            <option value="retrasada" ${status === "retrasada" ? "selected" : ""}>Retrasada</option>
-            <option value="realizada" ${status === "realizada" ? "selected" : ""}>Realizada</option>
-          </select>
+          <span class="badge ${status}">${statusLabel}</span>
+          <div class="accion-botones">
+            <button class="icon-btn ok" title="Marcar realizada" data-id="${a.id}" data-accion="realizada">✓</button>
+            <button class="icon-btn cancel" title="Marcar cancelada" data-id="${a.id}" data-accion="cancelada">✗</button>
+            <a class="icon-btn whatsapp" title="Contactar por WhatsApp" target="_blank"
+               href="https://wa.me/${telefonoWhatsapp(a.phone)}?text=${encodeURIComponent('Hola ' + a.name + ', te escribo de Barbería Bárbaros sobre tu cita del ' + prettyDate(a.date) + ' a las ' + a.time + '.')}">
+              <svg viewBox="0 0 32 32"><path fill="#25D366" d="M16 3C8.82 3 3 8.82 3 16s5.82 13 13 13 13-5.82 13-13S23.18 3 16 3zm6.15 9.05-2.1 9.9c-.16.7-.58.87-1.17.54l-3.23-2.38-1.56 1.5c-.17.17-.32.32-.65.32l.23-3.28 5.98-5.4c.26-.23-.06-.36-.4-.13l-7.39 4.65-3.18-.99c-.69-.22-.7-.69.15-1.02l12.43-4.79c.58-.21 1.08.14.89 1.08z"/></svg>
+            </a>
+          </div>
         </div>
       `;
-      const delBtn = document.createElement("button");
-      delBtn.className = "danger";
-      delBtn.textContent = "Cancelar";
-      delBtn.addEventListener("click", () => {
-        if(confirm(`¿Cancelar la cita de ${a.name} el ${prettyDate(a.date)} a las ${a.time}?`)){
-          delBtn.disabled = true;
-          deleteDoc(doc(db, "citas", a.id))
-            .then(() => {
-              apiPost("cancelarCita", { id: a.id }).catch(() => { /* respaldo best-effort */ });
-              refreshDataFromServer(refreshBarberPanel);
-            })
-            .catch(() => { alert("No se pudo cancelar. Intenta de nuevo."); delBtn.disabled = false; });
-        }
-      });
-      item.querySelector(".right").appendChild(delBtn);
       wrap.appendChild(item);
     });
 }
 
-// El barbero cambia el estado de una cita (pendiente / retrasada / realizada)
-document.getElementById("listaCitas").addEventListener("change", (e) => {
-  if(!e.target.classList.contains("badge-select")) return;
-  const id = e.target.dataset.id;
-  const val = e.target.value;
-  e.target.disabled = true;
+// El barbero marca una cita como realizada o cancelada con los botones rápidos
+document.getElementById("listaCitas").addEventListener("click", (e) => {
+  const btn = e.target.closest(".icon-btn[data-accion]");
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const val = btn.dataset.accion;
+  btn.disabled = true;
   updateDoc(doc(db, "citas", id), { status: val })
     .then(() => {
       apiPost("actualizarEstado", { id: id, status: val }).catch(() => { /* respaldo best-effort */ });
       refreshDataFromServer(refreshBarberPanel);
     })
-    .catch(() => { alert("No se pudo actualizar el estado. Intenta de nuevo."); e.target.disabled = false; });
+    .catch(() => { alert("No se pudo actualizar. Intenta de nuevo."); btn.disabled = false; });
 });
 
 /* --- Disponibilidad por fecha --- */
@@ -1553,7 +1598,7 @@ fechaConsulta.addEventListener("change", () => {
   }
 
   const all = generateSlots(dateStr);
-  const taken = CITAS.filter(a => a.date === dateStr).length;
+  const taken = CITAS.filter(a => a.date === dateStr && a.status !== "cancelada").length;
   const horasBloqueadas = HORAS_BLOQUEADAS.filter(h => h.date === dateStr).length;
   const ocupados = taken + horasBloqueadas;
   document.getElementById("availTotal").textContent = all.length;
@@ -1767,7 +1812,7 @@ historialFecha.addEventListener("change", () => {
       <div class="info"><b>${escapeHtml(a.name)}</b><span>${escapeHtml(a.phone)}</span></div>
       <div class="right">
         <div class="when">${a.time}</div>
-        <span class="badge ${status}">${status === "realizada" ? "Realizada" : status === "retrasada" ? "Retrasada" : "Pendiente"}</span>
+        <span class="badge ${status}">${status === "realizada" ? "Realizada" : status === "cancelada" ? "Cancelada" : status === "retrasada" ? "Retrasada" : "Pendiente"}</span>
       </div>
     `;
     wrap.appendChild(item);
@@ -1817,6 +1862,11 @@ if(esIOS() && !yaEstaInstalada()){
    ========================================================= */
 resetClientView();
 refreshDataFromServer(); // trae los datos apenas carga la página
+
+// Revisa cada minuto si alguna cita ya pasó de hora, para que el aviso de
+// "ya tienes cita" se quite solo en cuanto corresponda, sin depender de
+// que llegue ningún dato nuevo ni de que el barbero haga nada.
+setInterval(() => { renderMisCitasAviso(); }, 60000);
 </script>
 </body>
 </html>
