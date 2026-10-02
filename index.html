@@ -488,6 +488,7 @@
         <label for="resumenFecha">Elige el día</label>
         <input type="date" id="resumenFecha" style="display:none;">
         <div class="dias-scroll" id="diasScrollBarbero"></div>
+        <div id="festivoAviso" style="display:none; margin-top:12px;"></div>
         <div id="listaCitas" style="margin-top:14px;"></div>
       </div>
 
@@ -795,6 +796,7 @@ document.getElementById("btnAuthOpen").addEventListener("click", () => openAuthM
 let CITAS = [];
 let BLOQUEOS = [];
 let HORAS_BLOQUEADAS = [];
+let FESTIVOS_HABILITADOS = [];
 let dataLoaded = false;
 
 /* =========================================================
@@ -848,7 +850,7 @@ function apiPost(action, payload){
 }
 
 let listenersIniciados = false;
-const primerSnapshotListo = { citas: false, bloqueosDias: false, bloqueosHoras: false };
+const primerSnapshotListo = { citas: false, bloqueosDias: false, bloqueosHoras: false, festivosHabilitados: false };
 let callbacksPrimeraCarga = [];
 
 // Se conecta UNA sola vez a Firestore y se queda "escuchando" cambios reales
@@ -883,10 +885,18 @@ function iniciarListenersUnaVez(){
     if(barberUnlocked) renderHorasBloqueadas();
     renderDiasScroller();
   }, (err) => { console.error("Error en escucha de bloqueosHoras:", err); });
+
+  onSnapshot(collection(db, "festivosHabilitados"), (snap) => {
+    FESTIVOS_HABILITADOS = snap.docs.map(d => d.data());
+    primerSnapshotListo.festivosHabilitados = true;
+    intentarResolverPrimeraCarga();
+    if(barberUnlocked){ renderDiasScrollerBarbero(); renderFestivoAviso(); }
+    renderDiasScroller();
+  }, (err) => { console.error("Error en escucha de festivosHabilitados:", err); });
 }
 
 function intentarResolverPrimeraCarga(){
-  if(primerSnapshotListo.citas && primerSnapshotListo.bloqueosDias && primerSnapshotListo.bloqueosHoras){
+  if(primerSnapshotListo.citas && primerSnapshotListo.bloqueosDias && primerSnapshotListo.bloqueosHoras && primerSnapshotListo.festivosHabilitados){
     setSyncStatus("ok");
     callbacksPrimeraCarga.forEach(cb => cb());
     callbacksPrimeraCarga = [];
@@ -940,8 +950,96 @@ function minutesToLabel(min){
 
 function dateFromStr(str){ return new Date(str + "T00:00:00"); }
 
+/* =========================================================
+   FESTIVOS COLOMBIANOS QUE SIEMPRE CAEN EN LUNES (Ley Emiliani)
+   ========================================================= */
+
+// Calcula la fecha de Pascua (domingo de resurrección) para un año dado,
+// necesaria porque 3 de estos festivos dependen de la Semana Santa.
+function calcularPascua(year){
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19*a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2*e + 2*i - h - k) % 7;
+  const m = Math.floor((a + 11*h + 22*l) / 451);
+  const mes = Math.floor((h + l - 7*m + 114) / 31);
+  const dia = ((h + l - 7*m + 114) % 31) + 1;
+  return new Date(year, mes - 1, dia);
+}
+
+function sumarDias(fecha, dias){
+  const d = new Date(fecha);
+  d.setDate(d.getDate() + dias);
+  return d;
+}
+
+// Mueve una fecha al lunes siguiente (o la deja igual si ya cae en lunes).
+function siguienteLunes(fecha){
+  const dia = fecha.getDay();
+  const diff = (1 - dia + 7) % 7;
+  return sumarDias(fecha, diff);
+}
+
+// Devuelve los festivos colombianos que SIEMPRE se celebran en lunes
+// (los movidos por la Ley Emiliani), para el año indicado.
+function festivosLunesColombia(year){
+  const pascua = calcularPascua(year);
+
+  const fijosMovidos = [
+    { nombre: "Reyes Magos", mes: 0, dia: 6 },
+    { nombre: "San José", mes: 2, dia: 19 },
+    { nombre: "San Pedro y San Pablo", mes: 5, dia: 29 },
+    { nombre: "Asunción de la Virgen", mes: 7, dia: 15 },
+    { nombre: "Día de la Raza", mes: 9, dia: 12 },
+    { nombre: "Todos los Santos", mes: 10, dia: 1 },
+    { nombre: "Independencia de Cartagena", mes: 10, dia: 11 }
+  ];
+
+  const festivos = fijosMovidos.map(f => ({
+    nombre: f.nombre,
+    fecha: siguienteLunes(new Date(year, f.mes, f.dia))
+  }));
+
+  festivos.push({ nombre: "Ascensión del Señor", fecha: siguienteLunes(sumarDias(pascua, 39)) });
+  festivos.push({ nombre: "Corpus Christi", fecha: siguienteLunes(sumarDias(pascua, 60)) });
+  festivos.push({ nombre: "Sagrado Corazón de Jesús", fecha: siguienteLunes(sumarDias(pascua, 68)) });
+
+  return festivos;
+}
+
+// ¿Esta fecha es uno de esos festivos de lunes? (revisa el año anterior,
+// actual y siguiente, por si el festivo cae muy cerca de un cambio de año)
+function festivoLunesInfo(dateStr){
+  const fecha = dateFromStr(dateStr);
+  const year = fecha.getFullYear();
+  const todos = [
+    ...festivosLunesColombia(year - 1),
+    ...festivosLunesColombia(year),
+    ...festivosLunesColombia(year + 1)
+  ];
+  return todos.find(f => {
+    const fStr = `${f.fecha.getFullYear()}-${pad(f.fecha.getMonth()+1)}-${pad(f.fecha.getDate())}`;
+    return fStr === dateStr;
+  });
+}
+
 function isBlocked(dateStr){
-  return BLOQUEOS.find(b => b.date === dateStr);
+  const bloqueoManual = BLOQUEOS.find(b => b.date === dateStr);
+  if(bloqueoManual) return bloqueoManual;
+
+  const festivo = festivoLunesInfo(dateStr);
+  const habilitado = FESTIVOS_HABILITADOS.some(f => f.date === dateStr);
+  if(festivo && !habilitado){
+    return { date: dateStr, reason: festivo.nombre + " (festivo)", esFestivo: true };
+  }
+  return undefined;
 }
 
 function prettyDate(dateStr){
@@ -1474,6 +1572,49 @@ function renderStats(){
 
 // Tarjetas de día para el panel del barbero: en vez de "cupos libres",
 // muestran cuántas citas pendientes/retrasadas hay cada día.
+// Si el día elegido en el resumen es un festivo de lunes, muestra el aviso
+// con el botón para habilitarlo (o volver a bloquearlo si ya lo habilitó).
+function renderFestivoAviso(){
+  const cont = document.getElementById("festivoAviso");
+  if(!cont) return;
+  const resumenFecha = document.getElementById("resumenFecha");
+  const fechaElegida = resumenFecha.value || todayStr();
+
+  const festivo = festivoLunesInfo(fechaElegida);
+  if(!festivo){ cont.style.display = "none"; return; }
+
+  const habilitado = FESTIVOS_HABILITADOS.some(f => f.date === fechaElegida);
+  cont.style.display = "block";
+
+  if(habilitado){
+    cont.innerHTML = `
+      <div class="day-note" style="border:1px solid var(--line);">
+        📅 <b>${festivo.nombre}</b> — habilitaste este festivo para trabajar.
+      </div>
+      <button class="secondary" id="btnToggleFestivo" style="margin-top:8px;">Volver a bloquear este festivo</button>
+    `;
+  }else{
+    cont.innerHTML = `
+      <div class="day-note" style="border:1px solid var(--line);">
+        📅 <b>${festivo.nombre}</b> — este día está bloqueado automáticamente por ser festivo.
+      </div>
+      <button class="primary" id="btnToggleFestivo" style="margin-top:8px;">Habilitar este festivo para trabajar</button>
+    `;
+  }
+
+  document.getElementById("btnToggleFestivo").addEventListener("click", () => {
+    const btn = document.getElementById("btnToggleFestivo");
+    btn.disabled = true;
+    if(habilitado){
+      deleteDoc(doc(db, "festivosHabilitados", fechaElegida))
+        .catch(() => alert("No se pudo bloquear de nuevo. Intenta otra vez."));
+    }else{
+      setDoc(doc(db, "festivosHabilitados", fechaElegida), { date: fechaElegida, nombre: festivo.nombre })
+        .catch(() => alert("No se pudo habilitar. Intenta otra vez."));
+    }
+  });
+}
+
 function renderDiasScrollerBarbero(){
   const wrap = document.getElementById("diasScrollBarbero");
   if(!wrap) return;
@@ -1523,6 +1664,7 @@ function renderListaCitas(){
   const fechaElegida = resumenFecha.value;
 
   renderDiasScrollerBarbero();
+  renderFestivoAviso();
 
   // El resumen solo muestra lo que aún necesita atención (pendiente/retrasada)
   // en la fecha elegida. Lo realizado o cancelado se consulta en "Buscar histórico".
