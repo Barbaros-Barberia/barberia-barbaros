@@ -989,9 +989,26 @@ function siguienteLunes(fecha){
 
 // Devuelve los festivos colombianos que SIEMPRE se celebran en lunes
 // (los movidos por la Ley Emiliani), para el año indicado.
-function festivosLunesColombia(year){
+// Los 18 festivos oficiales de Colombia para un año dado: los de fecha
+// fija (no se mueven), los de Semana Santa (no se mueven) y los que la
+// Ley Emiliani traslada siempre al lunes siguiente.
+function festivosColombia(year){
   const pascua = calcularPascua(year);
+  const festivos = [];
 
+  // Fecha fija, nunca se mueven
+  festivos.push({ nombre: "Año Nuevo", fecha: new Date(year, 0, 1) });
+  festivos.push({ nombre: "Día del Trabajo", fecha: new Date(year, 4, 1) });
+  festivos.push({ nombre: "Independencia de Colombia", fecha: new Date(year, 6, 20) });
+  festivos.push({ nombre: "Batalla de Boyacá", fecha: new Date(year, 7, 7) });
+  festivos.push({ nombre: "Inmaculada Concepción", fecha: new Date(year, 11, 8) });
+  festivos.push({ nombre: "Navidad", fecha: new Date(year, 11, 25) });
+
+  // Dependen de Semana Santa, pero no se mueven de su día
+  festivos.push({ nombre: "Jueves Santo", fecha: sumarDias(pascua, -3) });
+  festivos.push({ nombre: "Viernes Santo", fecha: sumarDias(pascua, -2) });
+
+  // Se trasladan siempre al lunes siguiente (Ley Emiliani)
   const fijosMovidos = [
     { nombre: "Reyes Magos", mes: 0, dia: 6 },
     { nombre: "San José", mes: 2, dia: 19 },
@@ -1001,11 +1018,7 @@ function festivosLunesColombia(year){
     { nombre: "Todos los Santos", mes: 10, dia: 1 },
     { nombre: "Independencia de Cartagena", mes: 10, dia: 11 }
   ];
-
-  const festivos = fijosMovidos.map(f => ({
-    nombre: f.nombre,
-    fecha: siguienteLunes(new Date(year, f.mes, f.dia))
-  }));
+  fijosMovidos.forEach(f => festivos.push({ nombre: f.nombre, fecha: siguienteLunes(new Date(year, f.mes, f.dia)) }));
 
   festivos.push({ nombre: "Ascensión del Señor", fecha: siguienteLunes(sumarDias(pascua, 39)) });
   festivos.push({ nombre: "Corpus Christi", fecha: siguienteLunes(sumarDias(pascua, 60)) });
@@ -1014,15 +1027,15 @@ function festivosLunesColombia(year){
   return festivos;
 }
 
-// ¿Esta fecha es uno de esos festivos de lunes? (revisa el año anterior,
-// actual y siguiente, por si el festivo cae muy cerca de un cambio de año)
+// ¿Esta fecha es uno de los 18 festivos colombianos? (revisa el año
+// anterior, actual y siguiente, por si cae muy cerca de un cambio de año)
 function festivoLunesInfo(dateStr){
   const fecha = dateFromStr(dateStr);
   const year = fecha.getFullYear();
   const todos = [
-    ...festivosLunesColombia(year - 1),
-    ...festivosLunesColombia(year),
-    ...festivosLunesColombia(year + 1)
+    ...festivosColombia(year - 1),
+    ...festivosColombia(year),
+    ...festivosColombia(year + 1)
   ];
   return todos.find(f => {
     const fStr = `${f.fecha.getFullYear()}-${pad(f.fecha.getMonth()+1)}-${pad(f.fecha.getDate())}`;
@@ -1572,7 +1585,7 @@ function renderStats(){
 
 // Tarjetas de día para el panel del barbero: en vez de "cupos libres",
 // muestran cuántas citas pendientes/retrasadas hay cada día.
-// Si el día elegido en el resumen es un festivo de lunes, muestra el aviso
+// Si el día elegido en el resumen es un festivo colombiano, muestra el aviso
 // con el botón para habilitarlo (o volver a bloquearlo si ya lo habilitó).
 function renderFestivoAviso(){
   const cont = document.getElementById("festivoAviso");
